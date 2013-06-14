@@ -24,7 +24,7 @@ dist: check-git-repository distclean
 distclean:
 	rm -Rf "$(distdir)" "$(distdir)".tar "$(distdir)".tar.bz2
 
-install:
+install: $(PROGRAMS)
 	install -d -m 0755 "$(DESTDIR)/$(prefix)/share/dbus-1/services"
 	install -m 0644 data/virt-service.service "$(DESTDIR)/$(prefix)/share/dbus-1/services"
 
