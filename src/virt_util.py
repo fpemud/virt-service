@@ -21,17 +21,6 @@ class VirtUtil:
 		return
 
     @staticmethod
-	def risePriviledge():
-		os.setegid(0)
-		os.seteuid(0)
-
-    @staticmethod
-	def dropPriviledge():
-		assert os.geteuid() == 0 and os.getegid() == 0
-		os.setegid(os.getresgid()[2])
-		os.seteuid(os.getresuid()[2])
-
-    @staticmethod
 	def copyToDir(srcFilename, dstdir, mode=None):
 		"""Copy file to specified directory, and set file mode if required"""
 
