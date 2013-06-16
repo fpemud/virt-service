@@ -8,6 +8,7 @@ import time
 import grp
 import pwd
 import socket
+import re
 
 class VirtUtil:
 
@@ -189,8 +190,8 @@ class VirtUtil:
 		return groups
 
     @staticmethod
-	def getMaxTapId(self, brname):
-		ret = VirUtil.shell('/bin/ifconfig -a', 'stdout')
+	def getMaxTapId(brname):
+		ret = VirtUtil.shell('/bin/ifconfig -a', 'stdout')
 		matchList = re.findall("^%s.([0-9]+):"%(brname), ret, re.MULTILINE)
 		maxId = 0
 		for m in matchList:

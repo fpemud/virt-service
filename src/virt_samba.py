@@ -3,14 +3,17 @@
 
 import re
 from virt_util import VirtUtil
-from virt_network import VirtNetworkNat
 
 class VirtSambaServer:
-	"""VirtSambaServer can access the private member of VirtNetworkNat"""
+	"""VirtSambaServer can access the private member of VirtNetworkNat or VirtNetworkRoute"""
 
-    def __init__(self, netObj):
-		assert isinstance(netObj, VirtNetworkNat)
-		self.netObj = netObj
+    def __init__(self):
+		pass
+#		assert netObj.__class__.__name__ in ["VirtNetworkNat", "VirtNetworkRoute"]		# use this method to workaround the cycle dependency
+#		self.netObj = netObj
+
+	def setEnable(self, onOff):
+		pass
 
 	def addShare(self, vmName, shareName, srcPath, readonly):
 		pass

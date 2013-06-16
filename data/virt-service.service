@@ -1,3 +1,0 @@
-[D-BUS Service]
-Name=org.fpemud.VirtService
-Exec=/usr/libexec/virt-service/virt-service-daemon
