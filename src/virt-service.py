@@ -6,15 +6,24 @@ from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 from virt_util import VirtUtil
 from virt_dbus import DbusMainObject
+from virt_host_network import VirtHostNetwork
 
 # loading kernel module, should be in openvpn
 VirtUtil.loadKernelModule("tun")
 
-# create dbus root object
+# create main loop
 DBusGMainLoop(set_as_default=True)
-dbusMainObject = DbusMainObject()
+mainloop = GLib.MainLoop()
+
+# create network manager of host machine
+hostNetwork = VirtHostNetwork()
+
+# create dbus root object
+dbusMainObject = DbusMainObject(mainloop, hostNetwork)
 
 # start main loop
-mainloop = GLib.MainLoop()
 mainloop.run()
+
+# release operation
+dbusMainObject.release()
 

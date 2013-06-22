@@ -20,15 +20,20 @@ from virt_samba import VirtSambaServer
 # Object path           /
 #
 # Methods:
-# networkId:string NewNetwork(networkType:string)
-# void             DeleteNetwork(networkId:string)
+# networkId:int NewNetwork(networkType:string)
+# void          DeleteNetwork(networkId:int)
 #
 # Signals:
+#
+# Notes:
+#   networkType can be: bridge, nat, route
+#   one user can only have one network of a same type
+#   service exits when the last network is deleted
 #
 # ==== Network ====
 # Service               org.fpemud.VirtService
 # Interface             org.fpemud.VirtService.Network
-# Object path           /Networks/{networkId:string}
+# Object path           /{user-id:int}/Networks/{networkId:int}
 #
 # Methods:
 # vmId:int         AddVm(vmName:string)
@@ -40,7 +45,7 @@ from virt_samba import VirtSambaServer
 # ==== VmService ====
 # Service               org.fpemud.VirtService
 # Interface             org.fpemud.VirtService.Network.VmService
-# Object path           /Networks/{networkId:string}/VmServices/{vmId:int}
+# Object path           /{user-id:int}/Networks/{networkId:int}/VmServices/{vmId:int}
 #
 # Methods:
 # void             SambaSetEnable(onOff:boolean)
@@ -56,17 +61,20 @@ class VirtServiceException(dbus.DBusException):
 
 class DbusMainObject(dbus.service.Object):
 
-	def __init__(self):
+	def __init__(self, mainloop, hostNetwork):
+		self.mainloop = mainloop
+		self.hostNetwork = hostNetwork
 		self.netObjList = []
 
 		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
 		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService')
 
-	def __del__(self):
+	def release(self):
 		assert len(self.netObjList) == 0
+		self.remove_from_connection()
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', 
-	                     in_signature='s', out_signature='s')
+	                     in_signature='s', out_signature='i')
 	def NewNetwork(self, networkType, sender=None):
 		# get user id
 		if sender is None:
@@ -76,46 +84,52 @@ class DbusMainObject(dbus.service.Object):
 		# find existing network object
 		for no in self.netObjList:
 			if no.uid == uid and no.networkType == networkType:
-				return no.networkId
+				no.refCount = no.refCount + 1
+				return no.nid
 
 		# create new network object
 		nid = 0
 		for no in self.netObjList:
 			if no.uid == uid and no.nid >= nid:
 				nid = no.nid + 1
-		networkId = "%d_%d"%(uid, nid)
-		self.netObjList.append(DbusNetworkObject(uid, nid, networkId, networkType))
+		netObj = DbusNetworkObject(uid, nid, networkType, self.hostNetwork)
+		netObj.refCount = 1												# fixme: strange, maintain refcount out side the object
+		self.netObjList.append(netObj)
 
-		return networkId
+		return nid
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
-	                     in_signature='s')
-	def DeleteNetwork(self, networkId, sender=None):
+	                     in_signature='i')
+	def DeleteNetwork(self, nid, sender=None):
 		# get user id
 		if sender is None:
 			raise Exception("only accept user access")
 		uid = self.connection.get_unix_user(sender)
 
-		# find network object
-		netObj = None
-		for no in self.netObjList:
-			if no.uid != uid and no.networkId == networkId:
-				netObj = no
+		# find and delete network object
+		found = False
+		for i in range(0, len(self.netObjList)):
+			if self.netObjList[i].uid == uid and self.netObjList[i].nid == nid:
+				self.netObjList[i].refCount -= 1
+				if self.netObjList[i].refCount == 0:
+					no = self.netObjList.pop(i)
+					no.release()
+				found = True
 				break
-		if netObj is None:
+		if not found:
 			raise Exception("the specified network does not exist")
 
-		# delete network object
-		self.netObjList.remove(netObj)
-		del netObj
+		# service exits when the last network is deleted
+		if len(self.netObjList) == 0:
+			self.mainloop.quit()
 
 class DbusNetworkObject(dbus.service.Object):
 
-	def __init__(self, uid, nid, networkId, networkType):
+	def __init__(self, uid, nid, networkType, hostNetwork):
 		self.uid = uid
 		self.nid = nid
-		self.networkId = networkId
 		self.networkType = networkType
+		self.hostNetwork = hostNetwork
 
 		if self.networkType == "bridge":
 			self.netObj = VirtNetworkBridge(self.uid)
@@ -128,11 +142,22 @@ class DbusNetworkObject(dbus.service.Object):
 		else:
 			raise Exception("invalid networkType %s"%(networkType))
 
+		if self.networkType in ["bridge", "nat", "route"]:
+			self.hostNetwork.registerEventCallback(self.netObj)
+
 		self.vmIdDict = dict()		# vmName -> vmId
 		self.vmsObjList = []
 
 		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
-		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/Networks/%s'%(self.networkId))
+		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d'%(self.uid, self.nid))
+
+	def release(self):
+		assert len(self.vmIdDict) == 0
+		self.remove_from_connection()
+
+		if self.networkType in ["bridge", "nat", "route"]:
+			self.hostNetwork.unregisterEventCallback(self.netObj)
+		self.netObj.release()
 
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='s', out_signature='i')
@@ -155,8 +180,10 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# do job
 		self.netObj.addVm(vmId)
-		self.vmsObjList.append(DbusVmServiceObj(uid, self.networkId, vmId))
+		self.vmsObjList.append(DbusVmServiceObj(uid, self.nid, vmId))
 		self.vmIdDict[vmName] = vmId
+
+		return vmId
 
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='i')
@@ -173,10 +200,10 @@ class DbusNetworkObject(dbus.service.Object):
 			raise Exception("virt-machine does not exist")
 
 		# do job
-		for vms in self.vmsObjList:
-			if vms.vmId == vmId:
-				self.vmsObjList.remove(vms)
-				del vms
+		for i in range(0, len(self.vmsObjList)):
+			if self.vmsObjList[i].uid == uid and self.vmsObjList[i].vmId == vmId:
+				vo = self.vmsObjList.pop(i)
+				vo.release()
 				break
 
 		self.netObj.removeVm(vmId)
@@ -205,14 +232,17 @@ class DbusNetworkObject(dbus.service.Object):
 
 class DbusVmServiceObj(dbus.service.Object):
 
-	def __init__(self, uid, networkId, vmId):
+	def __init__(self, uid, nid, vmId):
 		self.uid = uid
-		self.networkId = networkId
+		self.nid = nid
 		self.vmId = vmId
 		self.sambaObj = VirtSambaServer()
 
 		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
-		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/Networks/%s/VmServices/%d'%(self.networkId, self.vmId))
+		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d/VmServices/%d'%(self.uid, self.nid, self.vmId))
+
+	def release(self):
+		self.remove_from_connection()
 
 	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
 	                     in_signature='b')

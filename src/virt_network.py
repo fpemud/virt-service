@@ -3,32 +3,38 @@
 
 import re
 from virt_util import VirtUtil
+from virt_samba import VirtSambaServer
+from virt_host_network import VirtHostNetworkEventCallback
 
-class VirtNetworkBridge:
+class VirtNetworkBridge(VirtHostNetworkEventCallback):
 
 	def __init__(self, netId):
 		self.netId = netId
 		self.brname = "vnb%d"%(self.netId)
-
 		self.mainIntfList = []
 		self.tapDict = dict()
-		self.bActive = False
 
-	def addMainInterface(self, ifName):
-		self.mainIntfList.append(ifName)
-		if self.bActive:
-			VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, ifName))
+		VirtUtil.shell('/sbin/brctl addbr "%s"'%(self.brname))
 
-	def removeMainInterface(self, ifName):
-		if self.bActive:
+	def release(self):
+		assert len(self.tapDict) == 0
+		VirtUtil.shell('/bin/ifconfig "%s" down'%(self.brname))
+		VirtUtil.shell('/sbin/brctl delbr "%s"'%(self.brname))
+
+	def onActiveInterfaceAdd(self, ifName):
+		# some interface like wlan0 has no bridging capbility, we ignore them
+		# fixme: how to send this error to user?
+		ret, dummy = VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, ifName), "retcode+stdout")
+		if ret == 0:
+			self.mainIntfList.append(ifName)
+
+	def onActiveInterfaceRemove(self, ifName):
+		if ifName in self.mainIntfList:
 			VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, ifName))
-		self.mainIntfList.remove(ifName)
+			self.mainIntfList.remove(ifName)
 
 	def addVm(self, vmId):
 		assert vmId not in self.tapDict
-
-		if len(self.tapDict) == 0:
-			self._createNetwork()
 
 		tapname = "%s.%d"%(self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
 		self._addTapInterface(tapname)
@@ -41,38 +47,18 @@ class VirtNetworkBridge:
 		self._removeTapInterface(tapname)
 		del self.tapDict[vmId]
 
-		if len(self.tapDict) == 0:
-			self._destroyNetwork()
-
 	def getTapInterface(self, vmId):
 		return self.tapDict[vmId]
 
-	def _createNetwork(self):
-		assert not self.bActive
-
-		VirtUtil.shell('/sbin/brctl addbr "%s"'%(self.brname))
-		for mi in self.mainIntfList:
-			VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, mi))
-		self.bActive = True
-
-	def _destroyNetwork(self):
-		assert self.bActive
-
-		for mi in self.mainIntfList:
-			VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, mi))
-		VirtUtil.shell('/bin/ifconfig "%s" down'%(self.brname))
-		VirtUtil.shell('/sbin/brctl delbr "%s"'%(self.brname))
-		self.bActive = False
-
 	def _addTapInterface(self, tapname):
-		VirtUtil.shell('/usr/sbin/openvpn --mktun --dev "%s"'%(tapname))
+		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
 		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
 
 	def _removeTapInterface(self, tapname):
 		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
-		VirtUtil.shell('/usr/sbin/openvpn --rmtun --dev "%s"'%(tapname))
+		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 
-class VirtNetworkNat:
+class VirtNetworkNat(VirtHostNetworkEventCallback):
 
 	def __init__(self, netId):
 		self.netId = netId
@@ -85,23 +71,26 @@ class VirtNetworkNat:
 
 		self.mainIntfList = []
 		self.tapDict = dict()
-		self.bActive = False
+		self.sambaServer = VirtSambaServer()
 
-	def addMainInterface(self, ifName):
+		VirtUtil.shell('/sbin/brctl addbr "%s"'%(self.brname))
+		VirtUtil.shell('/bin/ifconfig "%s" hw ether "%s"'%(self.brname, self.brmac))
+		VirtUtil.shell('/bin/ifconfig "%s" "%s" netmask "%s"'%(self.brname, self.brip, self.netmask))
+
+	def release(self):
+		assert len(self.tapDict) == 0
+
+		VirtUtil.shell('/bin/ifconfig "%s" down'%(self.brname))
+		VirtUtil.shell('/sbin/brctl delbr "%s"'%(self.brname))
+
+	def onActiveInterfaceAdd(self, ifName):
 		self.mainIntfList.append(ifName)
-		if self.bActive:
-			VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, ifName))
 
-	def removeMainInterface(self, ifName):
-		if self.bActive:
-			VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, ifName))
+	def onActiveInterfaceRemove(self, ifName):
 		self.mainIntfList.remove(ifName)
 
 	def addVm(self, vmId):
 		assert vmId not in self.tapDict
-
-		if len(self.tapDict) == 0:
-			self._createNetwork()
 
 		tapname = "%s.%d"%(self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
 		self._addTapInterface(tapname)
@@ -114,34 +103,22 @@ class VirtNetworkNat:
 		self._removeTapInterface(tapname)
 		del self.tapDict[vmId]
 
-		if len(self.tapDict) == 0:
-			self._destroyNetwork()
-
 	def getTapInterface(self, vmId):
 		return self.tapDict[vmId]
 
-	def _createNetwork(self):
-		assert not self.bActive
+	def getSambaServer(self):
+		return self.sambaServer
 
-		VirtUtil.shell('/sbin/brctl addbr "%s"'%(self.brname))
-		VirtUtil.shell('/bin/ifconfig "%s" hw ether "%s"'%(self.brname, self.brmac))
-		VirtUtil.shell('/bin/ifconfig "%s" "%s" netmask "%s"'%(self.brname, self.brip, self.netmask))
-		self.bActive = True
-
-	def _destroyNetwork(self):
-		assert self.bActive
-
-		VirtUtil.shell('/bin/ifconfig "%s" down'%(self.brname))
-		VirtUtil.shell('/sbin/brctl delbr "%s"'%(self.brname))
-		self.bActive = False
+	def getFtpServer(self):
+		assert False
 
 	def _addTapInterface(self, tapname):
-		VirtUtil.shell('/usr/sbin/openvpn --mktun --dev "%s"'%(tapname))
+		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
 		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
 
 	def _removeTapInterface(self, tapname):
 		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
-		VirtUtil.shell('/usr/sbin/openvpn --rmtun --dev "%s"'%(tapname))
+		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 
 #	def _genIptableRulesFirewall(self):
 #		return
@@ -157,10 +134,19 @@ class VirtNetworkNat:
 #		VirtUtil.shell('/sbin/iptables -t nat -D POSTROUTING -s %s/%s -j MASQUERADE'%(self.netip, self.netmask))
 #		return
 
-class VirtNetworkRoute:
+class VirtNetworkRoute(VirtHostNetworkEventCallback):
 	def __init__(self, netId):
 		self.netId = netId
 		self.brname = "vnr%d"%(self.netId)
+
+	def release(self):
+		pass
+
+	def onActiveInterfaceAdd(self, ifName):
+		assert False
+
+	def onActiveInterfaceRemove(self, ifName):
+		assert False
 
 class VirtNetworkIsolate:
 
@@ -169,18 +155,21 @@ class VirtNetworkIsolate:
 		self.brname = "vni%d"%(self.netId)				# it's a virtual bridge interface
 		self.tapDict = dict()
 
+	def release(self):
+		pass
+
 	def addVm(self, vmId):
 		assert vmId not in self.tapDict
 
 		tapname = "%s.%d"%(self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
-		VirtUtil.shell('/usr/sbin/openvpn --mktun --dev "%s"'%(tapname))
+		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
 		self.tapDict[vmId] = tapname
 
 	def removeVm(self, vmId):
 		assert vmId in self.tapDict
 
 		tapname = self.tapDict[vmId]
-		VirtUtil.shell('/usr/sbin/openvpn --rmtun --dev "%s"'%(tapname))
+		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 		del self.tapDict[vmId]
 
 	def getTapInterface(self, vmId):
