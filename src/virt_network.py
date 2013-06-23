@@ -3,7 +3,8 @@
 
 import re
 from virt_util import VirtUtil
-from virt_samba import VirtSambaServer
+from virt_dhcp_server import VirtDhcpServer
+from virt_samba_server import VirtSambaServer
 from virt_host_network import VirtHostNetworkEventCallback
 
 class VirtNetworkBridge(VirtHostNetworkEventCallback):
@@ -15,6 +16,7 @@ class VirtNetworkBridge(VirtHostNetworkEventCallback):
 		self.tapDict = dict()
 
 		VirtUtil.shell('/sbin/brctl addbr "%s"'%(self.brname))
+		VirtUtil.shell('/bin/ifconfig "%s" up'%(self.brname))
 
 	def release(self):
 		assert len(self.tapDict) == 0
@@ -53,8 +55,10 @@ class VirtNetworkBridge(VirtHostNetworkEventCallback):
 	def _addTapInterface(self, tapname):
 		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
 		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
+		VirtUtil.shell('/bin/ifconfig "%s" up'%(tapname))
 
 	def _removeTapInterface(self, tapname):
+		VirtUtil.shell('/bin/ifconfig "%s" down'%(tapname))
 		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
 		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 
@@ -71,15 +75,19 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
 
 		self.mainIntfList = []
 		self.tapDict = dict()
+		self.dhcpServer = VirtDhcpServer(self.brname, self.brip, self.netip, self.netmask, )
 		self.sambaServer = VirtSambaServer()
 
 		VirtUtil.shell('/sbin/brctl addbr "%s"'%(self.brname))
 		VirtUtil.shell('/bin/ifconfig "%s" hw ether "%s"'%(self.brname, self.brmac))
 		VirtUtil.shell('/bin/ifconfig "%s" "%s" netmask "%s"'%(self.brname, self.brip, self.netmask))
+		VirtUtil.shell('/bin/ifconfig "%s" up'%(self.brname))
+		self.dhcpServer.enableServer()
 
 	def release(self):
 		assert len(self.tapDict) == 0
 
+		self.dhcpServer.disableServer()
 		VirtUtil.shell('/bin/ifconfig "%s" down'%(self.brname))
 		VirtUtil.shell('/sbin/brctl delbr "%s"'%(self.brname))
 
@@ -115,8 +123,10 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
 	def _addTapInterface(self, tapname):
 		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
 		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
+		VirtUtil.shell('/bin/ifconfig "%s" up'%(tapname))
 
 	def _removeTapInterface(self, tapname):
+		VirtUtil.shell('/bin/ifconfig "%s" down'%(tapname))
 		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
 		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 
