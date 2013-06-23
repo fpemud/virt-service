@@ -82,12 +82,14 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
 		VirtUtil.shell('/bin/ifconfig "%s" hw ether "%s"'%(self.brname, self.brmac))
 		VirtUtil.shell('/bin/ifconfig "%s" "%s" netmask "%s"'%(self.brname, self.brip, self.netmask))
 		VirtUtil.shell('/bin/ifconfig "%s" up'%(self.brname))
+		VirtUtil.shell('/sbin/iptables -t nat -A POSTROUTING -s %s/%s -j MASQUERADE'%(self.netip, self.netmask))
 		self.dhcpServer.enableServer()
 
 	def release(self):
 		assert len(self.tapDict) == 0
 
 		self.dhcpServer.disableServer()
+		VirtUtil.shell('/sbin/iptables -t nat -D POSTROUTING -s %s/%s -j MASQUERADE'%(self.netip, self.netmask))
 		VirtUtil.shell('/bin/ifconfig "%s" down'%(self.brname))
 		VirtUtil.shell('/sbin/brctl delbr "%s"'%(self.brname))
 
