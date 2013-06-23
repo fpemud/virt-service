@@ -198,3 +198,19 @@ class VirtUtil:
 			if int(m) > maxId:
 				maxId = int(m)
 		return maxId
+
+    @staticmethod
+	def dbusGetUserId(connection, sender):
+		if sender is None:
+			raise Exception("only accept user access")
+		return connection.get_unix_user(sender)
+
+    @staticmethod
+	def dbusCheckUserId(connection, sender, uid):
+		if sender is None:
+			raise Exception("only accept user access")
+		if connection.get_unix_user(sender) != uid:
+			raise Exception("priviledge violation")
+
+
+

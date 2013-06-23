@@ -4,6 +4,7 @@
 import os
 import dbus
 import dbus.service
+from virt_util import VirtUtil
 from virt_network import VirtNetworkBridge
 from virt_network import VirtNetworkNat
 from virt_network import VirtNetworkRoute
@@ -79,9 +80,7 @@ class DbusMainObject(dbus.service.Object):
 	                     in_signature='s', out_signature='i')
 	def NewNetwork(self, networkType, sender=None):
 		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		uid = self.connection.get_unix_user(sender)
+		uid = VirtUtil.dbusGetUserId(self.connection, sender)
 
 		# find existing network object
 		for no in self.netObjList:
@@ -114,9 +113,7 @@ class DbusMainObject(dbus.service.Object):
 	                     in_signature='i')
 	def DeleteNetwork(self, nid, sender=None):
 		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		uid = self.connection.get_unix_user(sender)
+		uid = VirtUtil.dbusGetUserId(self.connection, sender)
 
 		# find and delete network object
 		found = False
@@ -174,12 +171,8 @@ class DbusNetworkObject(dbus.service.Object):
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='s', out_signature='i')
 	def AddVm(self, vmName, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# find existing vm object
 		if vmName in self.vmIdDict:
@@ -197,7 +190,7 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# add virtual machine
 		self.netObj.addVm(vmId)
-		self.vmsObjList.append(DbusVmServiceObj(uid, self.nid, vmId))
+		self.vmsObjList.append(DbusVmServiceObj(self.uid, self.nid, vmId))
 		self.vmIdDict[vmName] = vmId
 
 		return vmId
@@ -205,12 +198,8 @@ class DbusNetworkObject(dbus.service.Object):
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='i')
 	def DeleteVm(self, vmId, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# find existing vm object
 		if vmId not in self.vmIdDict.values():
@@ -218,7 +207,7 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# do job
 		for i in range(0, len(self.vmsObjList)):
-			if self.vmsObjList[i].uid == uid and self.vmsObjList[i].vmId == vmId:
+			if self.vmsObjList[i].uid == self.uid and self.vmsObjList[i].vmId == vmId:
 				vo = self.vmsObjList.pop(i)
 				vo.release()
 				break
@@ -233,12 +222,8 @@ class DbusNetworkObject(dbus.service.Object):
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='i', out_signature='s')
 	def GetTapInterface(self, vmId, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# find existing vm object
 		if vmId not in self.vmIdDict.values():
@@ -250,12 +235,8 @@ class DbusNetworkObject(dbus.service.Object):
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='i', out_signature='s')
 	def GetTapVmMacAddress(self, vmId, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# find existing vm object
 		if vmId not in self.vmIdDict.values():
@@ -265,8 +246,8 @@ class DbusNetworkObject(dbus.service.Object):
 		# this mac address is not the same as the mac address of the tap interface
 		assert self.nid < 8 and vmId < 32
 		macOuiVm = "00:50:01"
-		mac4 = uid / 256
-		mac5 = uid % 256
+		mac4 = self.uid / 256
+		mac5 = self.uid % 256
 		mac6 = self.nid * 32 + vmId
 		return "%s:%02x:%02x:%02x"%(macOuiVm, mac4, mac5, mac6)
 
@@ -287,48 +268,32 @@ class DbusVmServiceObj(dbus.service.Object):
 	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
 	                     in_signature='b')
 	def SambaSetEnable(self, onOff, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		assert False
 
 	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
 	                     out_signature='s')
 	def SambaGetAccount(self, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		assert False
 
 	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
 	                     in_signature='ssb')
 	def SambaAddShare(self, shareName, srcPath, readonly, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		assert False
 
 	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
 	                     in_signature='s')
 	def SambaDeleteShare(self, shareName, sender=None):
-		# get user id
-		if sender is None:
-			raise Exception("only accept user access")
-		if self.connection.get_unix_user(sender) != self.uid:
-			raise Exception("priviledge violation")
-		uid = self.connection.get_unix_user(sender)
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		assert False
 
