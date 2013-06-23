@@ -8,8 +8,8 @@ from virt_util import VirtUtil
 from virt_dbus import DbusMainObject
 from virt_host_network import VirtHostNetwork
 
-# loading kernel module, should be in openvpn
-VirtUtil.loadKernelModule("tun")
+# loading kernel module
+#VirtUtil.loadKernelModule("tun")
 
 # create main loop
 DBusGMainLoop(set_as_default=True)

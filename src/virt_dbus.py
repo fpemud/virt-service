@@ -184,7 +184,7 @@ class DbusNetworkObject(dbus.service.Object):
 			if vmId not in self.vmIdDict.values():
 				break
 			if vmId >= 31:
-				raise Exception("network number limit is reached")
+				raise Exception("virtual machine number limit is reached")
 			vmId = vmId + 1
 			continue
 
