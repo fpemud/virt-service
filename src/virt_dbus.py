@@ -2,6 +2,7 @@
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
+import shutil
 import dbus
 import dbus.service
 from virt_util import VirtUtil
@@ -42,20 +43,12 @@ from virt_samba_server import VirtSambaServer
 # void             DeleteVm(vmId:int)
 # tapifname:string GetTapInterface(vmId:int)
 # macaddr:string   GetTapVmMacAddress(vmId:int)
-# 
-# Signals:
-#
-# ==== VmService ====
-# Service               org.fpemud.VirtService
-# Interface             org.fpemud.VirtService.Network.VmService
-# Object path           /{user-id:int}/Networks/{networkId:int}/VmServices/{vmId:int}
-#
-# Methods:
-# void             SambaSetEnable(onOff:boolean)
+# void             SambaEnable()
+# void             SambaDisable()
 # account:string   SambaGetAccount()
 # void             SambaAddShare(shareName:string, srcPath:string, readonly:boolean)
 # void             SambaDeleteShare(shareName:string)
-#
+# 
 # Signals:
 #
 
@@ -64,9 +57,8 @@ class VirtServiceException(dbus.DBusException):
 
 class DbusMainObject(dbus.service.Object):
 
-	def __init__(self, mainloop, hostNetwork):
-		self.mainloop = mainloop
-		self.hostNetwork = hostNetwork
+	def __init__(self, param):
+		self.param = param
 		self.netObjList = []
 
 		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
@@ -103,7 +95,7 @@ class DbusMainObject(dbus.service.Object):
 			continue
 
 		# create new network object
-		netObj = DbusNetworkObject(uid, nid, networkType, self.hostNetwork)
+		netObj = DbusNetworkObject(self.param, uid, nid, networkType)
 		netObj.refCount = 1												# fixme: strange, maintain refcount out side the object
 		self.netObjList.append(netObj)
 
@@ -130,43 +122,57 @@ class DbusMainObject(dbus.service.Object):
 
 		# service exits when the last network is deleted
 		if len(self.netObjList) == 0:
-			self.mainloop.quit()
+			self.param.mainloop.quit()
 
 class DbusNetworkObject(dbus.service.Object):
 
-	def __init__(self, uid, nid, networkType, hostNetwork):
+	def __init__(self, param, uid, nid, networkType):
+		self.param = param
 		self.uid = uid
 		self.nid = nid
 		self.networkType = networkType
-		self.hostNetwork = hostNetwork
 
+		# create network temp directory
+		os.makedirs(os.path.join(self.param.tmpDir, str(self.uid), str(self.nid)))
+
+		# create network object
 		if self.networkType == "bridge":
-			self.netObj = VirtNetworkBridge(self.uid)
+			self.netObj = VirtNetworkBridge(self.param, self.uid, self.nid)
 		elif self.networkType == "nat":
-			self.netObj = VirtNetworkNat(self.uid)
+			self.netObj = VirtNetworkNat(self.param, self.uid, self.nid)
 		elif self.networkType == "route":
-			self.netObj = VirtNetworkRoute(self.uid)
+			self.netObj = VirtNetworkRoute(self.param, self.uid, self.nid)
 		elif self.networkType == "isolate":
-			self.netObj = VirtNetworkIsolate(self.uid)
+			self.netObj = VirtNetworkIsolate(self.param, self.uid, self.nid)
 		else:
 			raise Exception("invalid networkType %s"%(networkType))
 
+		# register host network callback
 		if self.networkType in ["bridge", "nat", "route"]:
-			self.hostNetwork.registerEventCallback(self.netObj)
+			self.param.hostNetwork.registerEventCallback(self.netObj)
 
+		# create data structure
 		self.vmIdDict = dict()		# vmName -> vmId
-		self.vmsObjList = []
 
+		# register dbus object path
 		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
 		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d'%(self.uid, self.nid))
 
 	def release(self):
 		assert len(self.vmIdDict) == 0
+
+		# deregister dbus object path
 		self.remove_from_connection()
 
+		# deregister host network callback
 		if self.networkType in ["bridge", "nat", "route"]:
-			self.hostNetwork.unregisterEventCallback(self.netObj)
+			self.param.hostNetwork.unregisterEventCallback(self.netObj)
+
+		# release network object
 		self.netObj.release()
+
+		# delete network temp directory
+		shutil.rmtree(os.path.join(self.param.tmpDir, str(self.uid), str(self.nid)))
 
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='s', out_signature='i')
@@ -190,7 +196,6 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# add virtual machine
 		self.netObj.addVm(vmId)
-		self.vmsObjList.append(DbusVmServiceObj(self.uid, self.nid, vmId))
 		self.vmIdDict[vmName] = vmId
 
 		return vmId
@@ -204,13 +209,6 @@ class DbusNetworkObject(dbus.service.Object):
 		# find existing vm object
 		if vmId not in self.vmIdDict.values():
 			raise Exception("virt-machine does not exist")
-
-		# do job
-		for i in range(0, len(self.vmsObjList)):
-			if self.vmsObjList[i].uid == self.uid and self.vmsObjList[i].vmId == vmId:
-				vo = self.vmsObjList.pop(i)
-				vo.release()
-				break
 
 		self.netObj.removeVm(vmId)
 
@@ -251,49 +249,65 @@ class DbusNetworkObject(dbus.service.Object):
 		mac6 = self.nid * 32 + vmId
 		return "%s:%02x:%02x:%02x"%(macOuiVm, mac4, mac5, mac6)
 
-class DbusVmServiceObj(dbus.service.Object):
-
-	def __init__(self, uid, nid, vmId):
-		self.uid = uid
-		self.nid = nid
-		self.vmId = vmId
-		self.sambaObj = VirtSambaServer()
-
-		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
-		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d/VmServices/%d'%(self.uid, self.nid, self.vmId))
-
-	def release(self):
-		self.remove_from_connection()
-
-	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
-	                     in_signature='b')
-	def SambaSetEnable(self, onOff, sender=None):
+	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
+	                     in_signature='')
+	def SambaEnable(self, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
-		assert False
+		# check networkType
+		if not isinstance(netObj, VirtNetworkNat):
+			raise Exception("only network type NAT support samba server")
 
-	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
+		if not self.netObj.getSambaServer().isServerEnabled():
+			self.netObj.getSambaServer().enableServer()
+
+	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
+	                     in_signature='')
+	def SambaDisable(self, sender=None):
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
+
+		# check networkType
+		if not isinstance(netObj, VirtNetworkNat):
+			raise Exception("only network type NAT support samba server")
+
+		self.netObj.getSambaServer().disableServer()
+
+	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     out_signature='s')
 	def SambaGetAccount(self, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
-		assert False
+		# check networkType
+		if not isinstance(netObj, VirtNetworkNat):
+			raise Exception("only network type NAT support samba server")
 
-	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
-	                     in_signature='ssb')
-	def SambaAddShare(self, shareName, srcPath, readonly, sender=None):
+		return self.netObj.getSambaServer().getAccountInfo()
+
+	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
+	                     in_signature='issb')
+	def SambaAddShare(self, vmId, shareName, srcPath, readonly, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
-		assert False
+		# check networkType
+		if not isinstance(netObj, VirtNetworkNat):
+			raise Exception("only network type NAT support samba server")
 
-	@dbus.service.method('org.fpemud.VirtService.Network.VmService', sender_keyword='sender',
-	                     in_signature='s')
-	def SambaDeleteShare(self, shareName, sender=None):
+		return self.netObj.addShare(vmId, shareName, srcPath, readonly)
+
+	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
+	                     in_signature='is')
+	def SambaDeleteShare(self, vmId, shareName, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
-		assert False
+		# check networkType
+		if not isinstance(netObj, VirtNetworkNat):
+			raise Exception("only network type NAT support samba server")
+
+		return self.netObj.removeShare(vmId, shareName)
+
 

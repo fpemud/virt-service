@@ -12,16 +12,16 @@ import re
 
 class VirtUtil:
 
-    @staticmethod
+	@staticmethod
 	def getSysctl(name):
 		msg = VirtUtil.shell("/sbin/sysctl -n %s"%(name), "stdout")
 		return msg.rstrip('\n')
 
-    @staticmethod
+	@staticmethod
 	def setSysctl(name, value):
 		return
 
-    @staticmethod
+	@staticmethod
 	def copyToDir(srcFilename, dstdir, mode=None):
 		"""Copy file to specified directory, and set file mode if required"""
 
@@ -32,7 +32,7 @@ class VirtUtil:
 		if mode is not None:
 			VirtUtil.shell("/bin/chmod " + mode + " \"" + fdst + "\"")
 
-    @staticmethod
+	@staticmethod
 	def copyToFile(srcFilename, dstFilename, mode=None):
 		"""Copy file to specified filename, and set file mode if required"""
 
@@ -42,7 +42,7 @@ class VirtUtil:
 		if mode is not None:
 			VirtUtil.shell("/bin/chmod " + mode + " \"" + dstFilename + "\"")
 
-    @staticmethod
+	@staticmethod
 	def readFile(filename):
 		"""Read file, returns the whold content"""
 
@@ -51,7 +51,7 @@ class VirtUtil:
 		f.close()
 		return buf
 
-    @staticmethod
+	@staticmethod
 	def writeFile(filename, buf, mode=None):
 		"""Write buffer to file"""
 
@@ -61,7 +61,7 @@ class VirtUtil:
 		if mode is not None:
 			VirtUtil.shell("/bin/chmod " + mode + " \"" + filename + "\"")
 
-    @staticmethod
+	@staticmethod
 	def mkDirAndClear(dirname):
 		VirtUtil.forceDelete(dirname)
 		os.mkdir(dirname)
@@ -72,7 +72,7 @@ class VirtUtil:
 		f = open(filename, 'w')
 		f.close()
 
-    @staticmethod
+	@staticmethod
 	def forceDelete(filename):
 		if os.path.islink(filename):
 			os.remove(filename)
@@ -81,7 +81,7 @@ class VirtUtil:
 		elif os.path.isdir(filename):
 			shutil.rmtree(filename)
 
-    @staticmethod
+	@staticmethod
 	def forceSymlink(source, link_name):
 		if os.path.exists(link_name):
 			os.remove(link_name)
@@ -107,7 +107,7 @@ class VirtUtil:
 				s.close()
 		raise Exception("No valid %s port in [%d,%d]."%(portType, portStart, portEnd))
 
-    @staticmethod
+	@staticmethod
 	def shell(cmd, flags=""):
 		"""Execute shell command"""
 
@@ -142,7 +142,47 @@ class VirtUtil:
 
 		assert False
 
-    @staticmethod
+	@staticmethod
+	def shellInteractive(cmd, strInput, flags=""):
+		"""Execute shell command with input interaction"""
+
+		assert cmd.startswith("/")
+
+		# Execute shell command, throws exception when failed
+		if flags == "":
+			proc = subprocess.Popen(cmd,
+									shell = True,
+									stdin = subprocess.PIPE)
+			proc.communicate(strInput)
+			if proc.returncode != 0:
+				raise Exception("Executing shell command \"%s\" failed, return code %d"%(cmd, proc.returncode))
+			return
+
+		# Execute shell command, throws exception when failed, returns stdout+stderr
+		if flags == "stdout":
+			proc = subprocess.Popen(cmd,
+									shell = True,
+									stdin = subprocess.PIPE,
+									stdout = subprocess.PIPE,
+									stderr = subprocess.STDOUT)
+			out = proc.communicate(strInput)[0]
+			if proc.returncode != 0:
+				raise Exception("Executing shell command \"%s\" failed, return code %d, output %s"%(cmd, proc.returncode, out))
+			return out
+
+		# Execute shell command, returns (returncode,stdout+stderr)
+		if flags == "retcode+stdout":
+			proc = subprocess.Popen(cmd,
+									shell = True,
+									stdin = subprocess.PIPE,
+									stdout = subprocess.PIPE,
+									stderr = subprocess.STDOUT)
+			out = proc.communicate(strInput)[0]
+			return (proc.returncode, out)
+
+		assert False
+
+	@staticmethod
 	def ipMaskToLen(mask):
 		"""255.255.255.0 -> 24"""
 
@@ -153,18 +193,18 @@ class VirtUtil:
 			netmask += int(netmasks[i])
 		return 32 - (netmask ^ 0xFFFFFFFF).bit_length()
 
-    @staticmethod
+	@staticmethod
 	def loadKernelModule(modname):
 		"""Loads a kernel module."""
 
 		VirtUtil.shell("/sbin/modprobe %s"%(modname))
 
-    @staticmethod
+	@staticmethod
 	def initLog(filename):
 		VirtUtil.forceDelete(filename)
 		VirtUtil.writeFile(filename, "")
 
-    @staticmethod
+	@staticmethod
 	def printLog(filename, msg):
 		f = open(filename, 'a')
 		if msg != "":
@@ -175,11 +215,11 @@ class VirtUtil:
 			f.write("\n")
 		f.close()
 
-    @staticmethod
+	@staticmethod
 	def getUsername():
 		return pwd.getpwuid(os.getuid())[0]
 
-    @staticmethod
+	@staticmethod
 	def getGroups():
 		"""Returns the group name list of the current user"""
 
@@ -189,7 +229,7 @@ class VirtUtil:
 		groups.append(grp.getgrgid(gid).gr_name)			# --fixme, should be prepend
 		return groups
 
-    @staticmethod
+	@staticmethod
 	def getMaxTapId(brname):
 		ret = VirtUtil.shell('/bin/ifconfig -a', 'stdout')
 		matchList = re.findall("^%s.([0-9]+):"%(brname), ret, re.MULTILINE)
@@ -199,18 +239,37 @@ class VirtUtil:
 				maxId = int(m)
 		return maxId
 
-    @staticmethod
+	@staticmethod
 	def dbusGetUserId(connection, sender):
 		if sender is None:
 			raise Exception("only accept user access")
 		return connection.get_unix_user(sender)
 
-    @staticmethod
+	@staticmethod
 	def dbusCheckUserId(connection, sender, uid):
 		if sender is None:
 			raise Exception("only accept user access")
 		if connection.get_unix_user(sender) != uid:
 			raise Exception("priviledge violation")
 
+	@staticmethod
+	def tdbFileCreate(filename):
+		assert " " not in filename			# fixme, tdbtool can't operate filename with space
+
+		inStr = ""
+		inStr += "create %s\n"%(filename)
+		inStr += "quit\n"
+		VirtUtil.shellInteractive("/usr/bin/tdbtool", inStr)
+
+	@staticmethod
+	def tdbFileAddUser(filename, username, password):
+		"""can only add unix user"""
+
+		assert " " not in filename			# fixme, v can't operate filename with space
+
+		inStr = ""
+		inStr += "%s\n"%(password)
+		inStr += "%s\n"%(password)
+		VirtUtil.shellInteractive("/usr/bin/pdbedit -b tdbsam:%s -a \"%s\" -t"%(filename, username), inStr)
 
 

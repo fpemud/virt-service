@@ -17,7 +17,6 @@ class VirtDhcpServer:
 		self.serverIp = serverIp
 		self.netip = netip
 		self.netmask = netmask
-
 		self.serverProc = None
 
 	def enableServer(self):
@@ -27,11 +26,10 @@ class VirtDhcpServer:
 		self.serverProc = subprocess.Popen(dnsmasqCmd, shell = True)
 
 	def disableServer(self):
-		assert self.serverProc is not None
-
-		self.serverProc.terminate()
-		self.serverProc.wait()
-		self.serverProc = None
+		if self.serverProc is not None:
+			self.serverProc.terminate()
+			self.serverProc.wait()
+			self.serverProc = None
 
 	def _genDnsmasqCommand(self):
 		ipStart = self.netip[:-2] + ".2"
