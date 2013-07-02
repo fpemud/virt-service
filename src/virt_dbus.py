@@ -105,6 +105,9 @@ class DbusMainObject(dbus.service.Object):
 		netObj.refCount = 1												# fixme: strange, maintain refcount out side the object
 		self.netObjList.append(netObj)
 
+		# open ipv4 forwarding
+		VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "1")
+
 		return nid
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
@@ -129,6 +132,7 @@ class DbusMainObject(dbus.service.Object):
 		finally:
 			# service exits when the last network is deleted
 			if len(self.netObjList) == 0:
+				VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
 				self.param.mainloop.quit()
 
 class DbusNetworkObject(dbus.service.Object):
@@ -259,7 +263,7 @@ class DbusNetworkObject(dbus.service.Object):
 		if vmId not in self.vmIdDict.values():
 			raise Exception("virt-machine does not exist")
 
-		return VirtUtil.getVmMacAddress(self.param.macOutVm, self.uid, self.nid, vmId)
+		return VirtUtil.getVmMacAddress(self.param.macOuiVm, self.uid, self.nid, vmId)
 
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender')
 	def SambaEnable(self, sender=None):
