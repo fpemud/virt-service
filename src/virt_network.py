@@ -3,8 +3,6 @@
 
 import re
 from virt_util import VirtUtil
-from virt_dhcp_server import VirtDhcpServer
-from virt_samba_server import VirtSambaServer
 from virt_host_network import VirtHostNetworkEventCallback
 
 class VirtNetworkBridge(VirtHostNetworkEventCallback):
@@ -41,28 +39,22 @@ class VirtNetworkBridge(VirtHostNetworkEventCallback):
 		assert vmId not in self.tapDict
 
 		tapname = "%s.%d"%(self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
-		self._addTapInterface(tapname)
+		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
+		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
+		VirtUtil.shell('/bin/ifconfig "%s" up'%(tapname))
 		self.tapDict[vmId] = tapname
 
 	def removeVm(self, vmId):
 		assert vmId in self.tapDict
 
 		tapname = self.tapDict[vmId]
-		self._removeTapInterface(tapname)
+		VirtUtil.shell('/bin/ifconfig "%s" down'%(tapname))
+		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
+		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 		del self.tapDict[vmId]
 
 	def getTapInterface(self, vmId):
 		return self.tapDict[vmId]
-
-	def _addTapInterface(self, tapname):
-		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
-		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
-		VirtUtil.shell('/bin/ifconfig "%s" up'%(tapname))
-
-	def _removeTapInterface(self, tapname):
-		VirtUtil.shell('/bin/ifconfig "%s" down'%(tapname))
-		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
-		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 
 class VirtNetworkNat(VirtHostNetworkEventCallback):
 
@@ -79,21 +71,16 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
 
 		self.mainIntfList = []
 		self.tapDict = dict()
-		self.dhcpServer = VirtDhcpServer(self.brname, self.brip, self.netip, self.netmask)
-		self.sambaServer = VirtSambaServer(self.param, self.uid, self.nid, self.brname)
 
 		VirtUtil.shell('/sbin/brctl addbr "%s"'%(self.brname))
 		VirtUtil.shell('/bin/ifconfig "%s" hw ether "%s"'%(self.brname, self.brmac))
 		VirtUtil.shell('/bin/ifconfig "%s" "%s" netmask "%s"'%(self.brname, self.brip, self.netmask))
 		VirtUtil.shell('/bin/ifconfig "%s" up'%(self.brname))
 		VirtUtil.shell('/sbin/iptables -t nat -A POSTROUTING -s %s/%s -j MASQUERADE'%(self.netip, self.netmask))
-		self.dhcpServer.enableServer()
 
 	def release(self):
 		assert len(self.tapDict) == 0
 
-		self.sambaServer.disableServer()
-		self.dhcpServer.disableServer()
 		VirtUtil.shell('/sbin/iptables -t nat -D POSTROUTING -s %s/%s -j MASQUERADE'%(self.netip, self.netmask))
 		VirtUtil.shell('/bin/ifconfig "%s" down'%(self.brname))
 		VirtUtil.shell('/sbin/brctl delbr "%s"'%(self.brname))
@@ -108,31 +95,22 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
 		assert vmId not in self.tapDict
 
 		tapname = "%s.%d"%(self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
-		self._addTapInterface(tapname)
+		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
+		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
+		VirtUtil.shell('/bin/ifconfig "%s" up'%(tapname))
 		self.tapDict[vmId] = tapname
 
 	def removeVm(self, vmId):
 		assert vmId in self.tapDict
 
 		tapname = self.tapDict[vmId]
-		self._removeTapInterface(tapname)
+		VirtUtil.shell('/bin/ifconfig "%s" down'%(tapname))
+		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
+		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 		del self.tapDict[vmId]
 
 	def getTapInterface(self, vmId):
 		return self.tapDict[vmId]
-
-	def getSambaServer(self):
-		return self.sambaServer
-
-	def _addTapInterface(self, tapname):
-		VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap'%(tapname))
-		VirtUtil.shell('/sbin/brctl addif "%s" "%s"'%(self.brname, tapname))
-		VirtUtil.shell('/bin/ifconfig "%s" up'%(tapname))
-
-	def _removeTapInterface(self, tapname):
-		VirtUtil.shell('/bin/ifconfig "%s" down'%(tapname))
-		VirtUtil.shell('/sbin/brctl delif "%s" "%s"'%(self.brname, tapname))
-		VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap'%(tapname))
 
 class VirtNetworkRoute(VirtHostNetworkEventCallback):
 	def __init__(self, param, uid, nid):

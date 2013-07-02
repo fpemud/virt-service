@@ -240,6 +240,19 @@ class VirtUtil:
 		return maxId
 
 	@staticmethod
+	def getPidBySocket(socketInfo):
+		"""need to be run by root. socketInfo is like 0.0.0.0:80"""
+
+		rc, ret = VirtUtil.shell("/bin/netstat -anp | grep \"%s\""%(socketInfo), "retcode+stdout")
+		if rc != 0:
+			return -1
+		print ret
+
+		m = re.search(" +([0-9]+)/.*$", ret, re.MULTILINE)
+		assert m is not None
+		return int(m.group(1))
+
+	@staticmethod
 	def dbusGetUserId(connection, sender):
 		if sender is None:
 			raise Exception("only accept user access")
@@ -272,4 +285,24 @@ class VirtUtil:
 		inStr += "%s\n"%(password)
 		VirtUtil.shellInteractive("/usr/bin/pdbedit -b tdbsam:%s -a \"%s\" -t"%(filename, username), inStr)
 
+	@staticmethod
+	def getVmMacAddress(macOuiVm, uid, nid, vmId):
+		"""get mac address for virtual machine
+		   this mac address is not the same as the mac address of the tap interface"""
+
+		assert (nid >= 1 and nid < 7) and vmId < 32
+		mac4 = uid / 256
+		mac5 = uid % 256
+		mac6 = nid * 32 + vmId
+		return "%s:%02x:%02x:%02x"%(macOuiVm, mac4, mac5, mac6)
+
+	@staticmethod
+	def getVmIpAddress(ip1, uid, nid, vmId):
+		"""get ip address for virtual machine"""
+
+		assert (nid >= 1 and nid < 7) and vmId < 32
+		ip2 = uid / 256
+		ip3 = uid % 256
+		ip4 = nid * 32 + vmId
+		return "%d.%d.%d.%d"%(ip1, ip2, ip3, ip4)
 
