@@ -44,11 +44,9 @@ from virt_samba_server import VirtSambaServer
 # void             DeleteVm(vmId:int)
 # tapifname:string GetTapInterface(vmId:int)
 # macaddr:string   GetTapVmMacAddress(vmId:int)
-# void             SambaEnable()
-# void             SambaDisable()
-# account:string   SambaGetAccount()
-# void             SambaAddShare(shareName:string, srcPath:string, readonly:boolean)
-# void             SambaDeleteShare(shareName:string)
+# void             SambaAddShare(vmId:int, shareName:string, srcPath:string, readonly:boolean)
+# void             SambaDeleteShare(vmId:int, shareName:string)
+# account:string   SambaGetAccount(vmId:int)
 # 
 # Signals:
 #
@@ -105,7 +103,7 @@ class DbusMainObject(dbus.service.Object):
 		netObj.refCount = 1												# fixme: strange, maintain refcount out side the object
 		self.netObjList.append(netObj)
 
-		# open ipv4 forwarding
+		# open ipv4 forwarding, now no other program needs it, so we do a simple implementation
 		VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "1")
 
 		return nid
@@ -265,37 +263,14 @@ class DbusNetworkObject(dbus.service.Object):
 
 		return VirtUtil.getVmMacAddress(self.param.macOuiVm, self.uid, self.nid, vmId)
 
-	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender')
-	def SambaEnable(self, sender=None):
-		# check user id
-		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
-
-		# do job
-		self.gSambaServer.networkEnableServer(self.uid, self.nid)
-
-	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender')
-	def SambaDisable(self, sender=None):
-		# check user id
-		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
-
-		# do job
-		self.gSambaServer.networkDisableServer(self.uid, self.nid)
-
-	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
-	                     out_signature='s')
-	def SambaGetAccount(self, sender=None):
-		# check user id
-		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
-
-		# do job
-		username, password = self.gSambaServer.networkGetAccountInfo(self.uid, self.nid)
-		return "%s:%s"%(username, password)
-
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='issb')
 	def SambaAddShare(self, vmId, shareName, srcPath, readonly, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
+
+		if not srcPath.startswith("/"):
+			raise Exception("srcPath must be absoulte path")
 
 		# do job
 		return self.gSambaServer.networkAddShare(self.uid, self.nid, vmId, shareName, srcPath, readonly)
@@ -308,5 +283,15 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# do job
 		return self.gSambaServer.networkRemoveShare(self.uid, self.nid, vmId, shareName)
+
+	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
+	                     in_signature='i', out_signature='s')
+	def SambaGetAccount(self, vmId, sender=None):
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
+
+		# do job
+		username, password = self.gSambaServer.networkGetAccountInfo(self.uid, self.nid)
+		return "%s:%s"%(username, password)
 
 

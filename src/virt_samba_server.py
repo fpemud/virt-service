@@ -29,38 +29,12 @@ class VirtSambaServer:
 
 	def removeNetwork(self, uid, nid):
 		key = (uid, nid)
-		assert not self.networkDict[key].bEnable
+		assert len(self.networkDict[key].shareDict) == 0
 		del self.networkDict[key]
-
-	def networkEnableServer(self, uid, nid):
-		key = (uid, nid)
-		assert not self.networkDict[key].bEnable
-
-		if self.serverObj is None:
-			self._startServer()
-		else:
-			self.serverObj.updateShare()
-
-		self.networkDict[key].bEnable = True
-
-	def networkDisableServer(self, uid, nid):
-		key = (uid, nid)
-		assert self.networkDict[key].bEnable
-
-		self.networkDict[key].bEnable = False
-
-		if self._getEnableCount() == 0:
-			self._stopServer()
-		else:
-			self.serverObj.updateShare()
 
 	def networkGetAccountInfo(self, uid, nid):
 		"""return (username, password)"""
-
-		key = (uid, nid)
-		assert self.networkDict[key].bEnable
-
-		return (self.networkDict[key].username, self.networkDict[key].username)
+		return ("guest", "")
 
 	def networkAddShare(self, uid, nid, vmId, shareName, srcPath, readonly):
 		assert "_" not in shareName
@@ -74,8 +48,10 @@ class VirtSambaServer:
 		value = _ShareInfo(srcPath, readonly)
 		netInfo.shareDict[key] = value
 
-		# update server
-		if self.serverObj is not None:
+		# enable or update server
+		if self.serverObj is None:
+			self._startServer()
+		else:
 			self.serverObj.updateShare()
 
 	def networkRemoveShare(self, uid, nid, vmId, shareName):
@@ -88,8 +64,16 @@ class VirtSambaServer:
 		key = (vmId, shareName)
 		del netInfo.shareDict[key]
 
-		# update server
-		if self.serverObj is not None:
+		# disable or update server
+		bShouldDisable = True
+		for netInfo in self.networkDict.values():
+			if len(netInfo.shareDict) > 0:
+				bShouldDisable = False
+				break
+
+		if bShouldDisable:
+			self._stopServer()
+		else:
 			self.serverObj.updateShare()
 
 	def _startServer(self):
@@ -111,21 +95,13 @@ class VirtSambaServer:
 		self.serverObj.release()
 		self.serverObj = None
 
-	def _getEnableCount(self):
-		count = 0
-		for value in self.networkDict.values():
-			if value.bEnable:
-				count += 1
-		return count
-
 class _NetworkInfo:
 
 	def __init__(self, uid, serverPort):
 		self.serverPort = serverPort
 		self.username = pwd.getpwuid(uid).pw_name
-		self.groupname = grp.getgrgid(pwd.getpwuid(uid).pw_gid)
+		self.groupname = grp.getgrgid(pwd.getpwuid(uid).pw_gid).gr_name
 		self.shareDict = dict()
-		self.bEnable = False
 
 class _ShareInfo:
 	def __init__(self, srcPath, readonly):
@@ -165,6 +141,9 @@ class _ServerGlobal:
 
 		if cfg.has_option("global", "workgroup") and cfg.get("global", "workgroup") != "WORKGROUP":
 			raise Exception("Option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
+
+		if not cfg.has_option("global", "map to guest") or cfg.get("global", "map to guest") != "Bad User":
+			raise Exception("Option \"global/map to guest\" of main samba server must have value \"Bad User\"")
 
 	def updateShare(self):
 		buf = VirtUtil.readFile(self.bakConfFile)
@@ -220,11 +199,11 @@ class _ServerLocal:
 		buf += "bind interfaces only       = yes\n"
 		buf += "interfaces                 = %s\n"%(" ".join(ifList))
 		buf += "netbios name               = vmaster\n"
-		buf += "private dir                = \"%s\"\n"%(self.servDir)
-		buf += "pid directory              = \"%s\"\n"%(self.servDir)
-		buf += "lock directory             = \"%s\"\n"%(self.servDir)
-		buf += "state directory            = \"%s\"\n"%(self.servDir)
-		buf += "log file                   = \"%s/log.smbd\"\n"%(self.servDir)
+		buf += "private dir                = %s\n"%(self.servDir)
+		buf += "pid directory              = %s\n"%(self.servDir)
+		buf += "lock directory             = %s\n"%(self.servDir)
+		buf += "state directory            = %s\n"%(self.servDir)
+		buf += "log file                   = %s/log.smbd\n"%(self.servDir)
 		buf += "\n\n"
 		buf += _MyUtil.genSharePart(self.pObj, self.param)
 
@@ -246,9 +225,6 @@ class _MyUtil:
 			uid = nkey[0]
 			nid = nkey[1]
 
-			if not netInfo.bEnable:
-				continue
-
 			for skey, value in netInfo.shareDict.items():
 				vmId = skey[0]
 				shareName = skey[1]
@@ -256,8 +232,9 @@ class _MyUtil:
 				assert "_" not in shareName
 
 				buf += "[%d_%d_%d_%s]\n"%(uid, nid, vmId, shareName)
-				buf += "path = \"%s\"\n"%(value.srcPath)
-				buf += "browseable = no\n"
+				buf += "path = %s\n"%(value.srcPath)
+#				buf += "browseable = no\n"
+				buf += "browseable = yes\n"
 				buf += "guest ok = yes\n"
 				buf += "guest only = yes\n"
 				buf += "force user = %s\n"%(netInfo.username)
@@ -267,8 +244,6 @@ class _MyUtil:
 				else:
 					buf += "writable = yes\n"
 				buf += "hosts allow = %s\n"%(VirtUtil.getVmIpAddress(param.ip1, uid, nid, vmId))
-
-
 				buf += "\n"
 		return buf
 
