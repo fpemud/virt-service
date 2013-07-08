@@ -14,7 +14,7 @@ class VirtSambaServer:
 	"""If there's a global samba server, then use that server, else we start a new samba server
 	   Use one server to serve all the networks"""
 
-    def __init__(self, param):
+	def __init__(self, param):
 		self.param = param
 		self.networkDict = dict()
 		self.serverObj = None
@@ -118,13 +118,16 @@ class _ServerGlobal:
 
 		self.confDir = "/etc/samba"
 		self.confFile = os.path.join(self.confDir, "smb.conf")
-		self.bakConfFile = os.path.join(self.confDir, "smb.conf.bak.virt-service")
+		self.myConfDir = os.path.join(self.confDir, "virt-service")
+		self.bakConfFile = os.path.join(self.myConfDir, "smb.conf.bak")
 
+		os.mkdir(self.myConfDir)
 		shutil.move(self.confFile, self.bakConfFile)
 		self.updateShare()
 
 	def release(self):
 		shutil.move(self.bakConfFile, self.confFile)
+		shutil.rmtree(self.myConfDir)
 		os.kill(self.sambaPid, signal.SIGHUP)
 
 	def checkServer(self):
@@ -142,15 +145,39 @@ class _ServerGlobal:
 		if cfg.has_option("global", "workgroup") and cfg.get("global", "workgroup") != "WORKGROUP":
 			raise Exception("Option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
 
-		if not cfg.has_option("global", "map to guest") or cfg.get("global", "map to guest") != "Bad User":
-			raise Exception("Option \"global/map to guest\" of main samba server must have value \"Bad User\"")
-
 	def updateShare(self):
+		# modify global smb.conf
 		buf = VirtUtil.readFile(self.bakConfFile)
-		buf += "\n\n"
-		buf += _MyUtil.genSharePart(self.pObj, self.param)
+		buf += "\n"
+		buf += "# modified by virt-service\n"
+		buf += "include = %s\n"%(os.path.join(self.myConfDir, "smb.conf.%m"))
 		VirtUtil.writeFile(self.confFile, buf)
 
+		# delete all the share files
+		for f in os.listdir(self.myConfDir):
+			if f.endswith(".bak"):
+				continue
+			os.remove(os.path.join(self.myConfDir, f))
+
+		# recreate all the share files
+		sfDict = dict()
+		for nkey, netInfo in self.pObj.networkDict.items():
+			uid = nkey[0]
+			nid = nkey[1]
+			for skey, value in netInfo.shareDict.items():
+				vmId = skey[0]
+				shareName = skey[1]
+				vmIp = VirtUtil.getVmIpAddress(self.param.ip1, uid, nid, vmId)
+				if vmIp not in sfDict:
+					sfDict[vmIp] = ""
+				sfDict[vmIp] += _MyUtil.genSharePart(uid, nid, vmId, vmIp, netInfo.username, netInfo.groupname,
+				                                     shareName, value.srcPath, value.readonly)
+				sfDict[vmIp] += "\n"
+
+		for vmIp, fileBuf in sfDict.items():
+			VirtUtil.writeFile(os.path.join(self.myConfDir, "smb.conf.%s"%(vmIp)), fileBuf)
+
+		# update samba
 		os.kill(self.sambaPid, signal.SIGHUP)
 
 class _ServerLocal:
@@ -194,18 +221,18 @@ class _ServerLocal:
 			ifList.append(netInfo.serverPort)
 
 		buf = ""
-		buf += "[global]\n"
-		buf += "security                   = user\n"
-		buf += "bind interfaces only       = yes\n"
-		buf += "interfaces                 = %s\n"%(" ".join(ifList))
-		buf += "netbios name               = vmaster\n"
-		buf += "private dir                = %s\n"%(self.servDir)
-		buf += "pid directory              = %s\n"%(self.servDir)
-		buf += "lock directory             = %s\n"%(self.servDir)
-		buf += "state directory            = %s\n"%(self.servDir)
-		buf += "log file                   = %s/log.smbd\n"%(self.servDir)
-		buf += "\n\n"
-		buf += _MyUtil.genSharePart(self.pObj, self.param)
+#		buf += "[global]\n"
+#		buf += "security                   = user\n"
+#		buf += "bind interfaces only       = yes\n"
+#		buf += "interfaces                 = %s\n"%(" ".join(ifList))
+#		buf += "netbios name               = vmaster\n"
+#		buf += "private dir                = %s\n"%(self.servDir)
+#		buf += "pid directory              = %s\n"%(self.servDir)
+#		buf += "lock directory             = %s\n"%(self.servDir)
+#		buf += "state directory            = %s\n"%(self.servDir)
+#		buf += "log file                   = %s/log.smbd\n"%(self.servDir)
+#		buf += "\n\n"
+#		buf += _MyUtil.genSharePart(self.pObj, self.param)
 
 		VirtUtil.writeFile(self.confFile, buf)
 
@@ -219,31 +246,21 @@ class _ServerLocal:
 class _MyUtil:
 
 	@staticmethod
-	def genSharePart(pObj, param):
+	def genSharePart(uid, nid, vmId, vmIp, username, groupname, shareName, srcPath, readonly):
+		assert "_" not in shareName
+
 		buf = ""
-		for nkey, netInfo in pObj.networkDict.items():
-			uid = nkey[0]
-			nid = nkey[1]
+		buf += "[%d_%d_%d_%s]\n"%(uid, nid, vmId, shareName)
+		buf += "path = %s\n"%(srcPath)
+		buf += "guest ok = yes\n"
+		buf += "guest only = yes\n"
+		buf += "force user = %s\n"%(username)
+		buf += "force group = %s\n"%(groupname)
+		if readonly:
+			buf += "writable = no\n"
+		else:
+			buf += "writable = yes\n"
+		buf += "hosts allow = %s\n"%(vmIp)
 
-			for skey, value in netInfo.shareDict.items():
-				vmId = skey[0]
-				shareName = skey[1]
-
-				assert "_" not in shareName
-
-				buf += "[%d_%d_%d_%s]\n"%(uid, nid, vmId, shareName)
-				buf += "path = %s\n"%(value.srcPath)
-#				buf += "browseable = no\n"
-				buf += "browseable = yes\n"
-				buf += "guest ok = yes\n"
-				buf += "guest only = yes\n"
-				buf += "force user = %s\n"%(netInfo.username)
-				buf += "force group = %s\n"%(netInfo.groupname)
-				if value.readonly:
-					buf += "writable = no\n"
-				else:
-					buf += "writable = yes\n"
-				buf += "hosts allow = %s\n"%(VirtUtil.getVmIpAddress(param.ip1, uid, nid, vmId))
-				buf += "\n"
 		return buf
 
