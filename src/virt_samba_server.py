@@ -120,6 +120,7 @@ class _ServerGlobal:
 		self.confFile = os.path.join(self.confDir, "smb.conf")
 		self.myConfDir = os.path.join(self.confDir, "virt-service")
 		self.bakConfFile = os.path.join(self.myConfDir, "smb.conf.bak")
+		self.virtConfFilePrefix = "conf-virt"
 
 		os.mkdir(self.myConfDir)
 		shutil.move(self.confFile, self.bakConfFile)
@@ -150,32 +151,11 @@ class _ServerGlobal:
 		buf = VirtUtil.readFile(self.bakConfFile)
 		buf += "\n"
 		buf += "# modified by virt-service\n"
-		buf += "include = %s\n"%(os.path.join(self.myConfDir, "smb.conf.%m"))
+		buf += "include = %s\n"%(os.path.join(self.myConfDir, self.virtConfFilePrefix + ".%m"))
 		VirtUtil.writeFile(self.confFile, buf)
 
-		# delete all the share files
-		for f in os.listdir(self.myConfDir):
-			if f.endswith(".bak"):
-				continue
-			os.remove(os.path.join(self.myConfDir, f))
-
 		# recreate all the share files
-		sfDict = dict()
-		for nkey, netInfo in self.pObj.networkDict.items():
-			uid = nkey[0]
-			nid = nkey[1]
-			for skey, value in netInfo.shareDict.items():
-				vmId = skey[0]
-				shareName = skey[1]
-				vmIp = VirtUtil.getVmIpAddress(self.param.ip1, uid, nid, vmId)
-				if vmIp not in sfDict:
-					sfDict[vmIp] = ""
-				sfDict[vmIp] += _MyUtil.genSharePart(uid, nid, vmId, vmIp, netInfo.username, netInfo.groupname,
-				                                     shareName, value.srcPath, value.readonly)
-				sfDict[vmIp] += "\n"
-
-		for vmIp, fileBuf in sfDict.items():
-			VirtUtil.writeFile(os.path.join(self.myConfDir, "smb.conf.%s"%(vmIp)), fileBuf)
+		_MyUtil.genShareFiles(self.myConfDir, self.virtConfFilePrefix, self.param, self.pObj.networkDict)
 
 		# update samba
 		os.kill(self.sambaPid, signal.SIGHUP)
@@ -187,8 +167,9 @@ class _ServerLocal:
 		self.pObj = pObj		# parent object
 
 		self.servDir = os.path.join(self.pObj.param.tmpDir, "samba")
-		self.confFile = os.path.join(self.servDir, "smbd.conf")
+		self.confFile = os.path.join(self.servDir, "smb.conf")
 		self.passdbFile = os.path.join(self.servDir, "passdb.tdb")
+		self.virtConfFilePrefix = "conf-virt"
 
 		try:
 			os.mkdir(self.servDir)
@@ -210,31 +191,33 @@ class _ServerLocal:
 		self.serverProc.send_signal(signal.SIGHUP)
 
 	def _genPassdbFile(self):
-		pass
-#		VirtUtil.tdbFileCreate(self.passdbFile)
-#		VirtUtil.tdbFileAddUser(self.passdbFile, self.username, self.username)
+		VirtUtil.tdbFileCreate(self.passdbFile)
 
 	def _genSmbdConf(self):
 
+		# get interface list
 		ifList = []
 		for netInfo in self.pObj.networkDict.values():
 			ifList.append(netInfo.serverPort)
 
+		# generate smb.conf
 		buf = ""
-#		buf += "[global]\n"
-#		buf += "security                   = user\n"
-#		buf += "bind interfaces only       = yes\n"
-#		buf += "interfaces                 = %s\n"%(" ".join(ifList))
-#		buf += "netbios name               = vmaster\n"
-#		buf += "private dir                = %s\n"%(self.servDir)
-#		buf += "pid directory              = %s\n"%(self.servDir)
-#		buf += "lock directory             = %s\n"%(self.servDir)
-#		buf += "state directory            = %s\n"%(self.servDir)
-#		buf += "log file                   = %s/log.smbd\n"%(self.servDir)
-#		buf += "\n\n"
-#		buf += _MyUtil.genSharePart(self.pObj, self.param)
-
+		buf += "[global]\n"
+		buf += "security                   = user\n"
+		buf += "bind interfaces only       = yes\n"
+		buf += "interfaces                 = %s\n"%(" ".join(ifList))
+		buf += "private dir                = %s\n"%(self.servDir)
+		buf += "pid directory              = %s\n"%(self.servDir)
+		buf += "lock directory             = %s\n"%(self.servDir)
+		buf += "state directory            = %s\n"%(self.servDir)
+		buf += "log file                   = %s/log.smbd\n"%(self.servDir)
+		buf += "\n\n"
+		buf += "include                    = %s\n"%(self.virtConfFilePrefix + ".%m")
+		buf += "\n"
 		VirtUtil.writeFile(self.confFile, buf)
+
+		# generate share files
+		_MyUtil.genShareFiles(self.servDir, self.virtConfFilePrefix, self.param, self.pObj.networkDict)
 
 	def _genSmbdCommand(self):
 
@@ -244,6 +227,31 @@ class _ServerLocal:
 		return cmd
 
 class _MyUtil:
+
+	@staticmethod
+	def genShareFiles(dstDir, filePrefix, param, networkDict):
+		
+		# delete all the share files
+		for f in os.listdir(dstDir):
+			if f.startswith("%s."%(filePrefix)):
+				os.remove(os.path.join(dstDir, f))
+
+		# create all the share files
+		sfDict = dict()
+		for nkey, netInfo in networkDict.items():
+			uid = nkey[0]
+			nid = nkey[1]
+			for skey, value in netInfo.shareDict.items():
+				vmId = skey[0]
+				shareName = skey[1]
+				vmIp = VirtUtil.getVmIpAddress(param.ip1, uid, nid, vmId)
+				if vmIp not in sfDict:
+					sfDict[vmIp] = ""
+				sfDict[vmIp] += _MyUtil.genSharePart(uid, nid, vmId, vmIp, netInfo.username, netInfo.groupname,
+				                                     shareName, value.srcPath, value.readonly)
+				sfDict[vmIp] += "\n"
+		for vmIp, fileBuf in sfDict.items():
+			VirtUtil.writeFile(os.path.join(dstDir, "%s.%s"%(filePrefix, vmIp)), fileBuf)
 
 	@staticmethod
 	def genSharePart(uid, nid, vmId, vmIp, username, groupname, shareName, srcPath, readonly):
