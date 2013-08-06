@@ -23,8 +23,12 @@ from virt_samba_server import VirtSambaServer
 # Object path           /
 #
 # Methods:
-# networkId:int NewNetwork(networkType:string)
-# void          DeleteNetwork(networkId:int)
+# networkId:int    NewNetwork(networkType:string)
+# void             DeleteNetwork(networkId:int)
+# devPath:string   NewVfioDevicePci(devName:string)
+# devPath:string   NewVfioDeviceVga(devName:string)
+# devPath:string   NewVfioDeviceUsb(devName:string)
+# void             DeleteVfioDevice(devPath:string)
 #
 # Signals:
 #
@@ -132,6 +136,16 @@ class DbusMainObject(dbus.service.Object):
 			if len(self.netObjList) == 0:
 				VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
 				self.param.mainloop.quit()
+
+	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
+	                     in_signature='s', out_signature='s')
+	def NewVfioDevicePci(self, devName, sender=None):
+		pass
+
+	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
+	                     in_signature='s')
+	def DeleteVfioDevice(self, devPath, sender=None):
+		pass
 
 class DbusNetworkObject(dbus.service.Object):
 
