@@ -13,6 +13,7 @@ class VirtParam:
 	def __init__(self):
 		self.mainloop = None
 		self.hostNetwork = None
+		self.vfioDevManager = None
 		self.tmpDir = None
 		self.macOuiVm = "00:50:01"
 		self.ip1 = 10

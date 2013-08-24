@@ -2,6 +2,7 @@
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
+import re
 import pwd
 import grp
 import shutil
@@ -145,6 +146,11 @@ class _ServerGlobal:
 
 		if cfg.has_option("global", "workgroup") and cfg.get("global", "workgroup") != "WORKGROUP":
 			raise Exception("Option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
+
+		ret = VirtUtil.shell("/usr/bin/pdbedit -L", "stdout")
+		m = re.search("^nobody:[0-9]+:.*$", ret, re.MULTILINE)
+		if m is None:
+			raise Exception("Main samba server must have user \"nobody\"")
 
 	def updateShare(self):
 		# modify global smb.conf

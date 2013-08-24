@@ -10,6 +10,7 @@ from virt_util import VirtUtil
 from virt_param import VirtParam
 from virt_dbus import DbusMainObject
 from virt_host_network import VirtHostNetwork
+from virt_vfiodev_manager import VirtVfioDeviceManager
 
 # create VirtParam object
 param = VirtParam()
@@ -25,6 +26,9 @@ try:
 
 	# create network manager of host machine
 	param.hostNetwork = VirtHostNetwork()
+
+	# create VFIO device manager
+	param.vfioDevManager = VirtVfioDeviceManager()
 
 	# create dbus root object
 	dbusMainObject = DbusMainObject(param)

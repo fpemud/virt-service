@@ -9,15 +9,15 @@ class VirtVfioDeviceManager:
 	def __init__(self):
 		pass
 
-	def newVfioDeviceUsb(self, devName):
+	def newVfioDeviceUsb(self, uid, devName):
 		pass
 
-	def newVfioDevicePci(self, devName):
+	def newVfioDevicePci(self, uid, devName):
 		pass
 
-	def newVfioDeviceVga(self, devName):
+	def newVfioDeviceVga(self, uid, devName):
 		pass
 
-	def releaseVfioDevice(self, devPath):
+	def releaseVfioDevice(self, uid, devPath):
 		pass
 

@@ -135,17 +135,19 @@ class DbusMainObject(dbus.service.Object):
 			# service exits when the last network is deleted
 			if len(self.netObjList) == 0:
 				VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
-				self.param.mainloop.quit()
+#				self.param.mainloop.quit()
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
 	                     in_signature='s', out_signature='s')
 	def NewVfioDevicePci(self, devName, sender=None):
-		pass
+		uid = VirtUtil.dbusGetUserId(self.connection, sender)
+		return self.param.vfioDevManager.newVfioDeviceVga(uid, devName)
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
 	                     in_signature='s')
 	def DeleteVfioDevice(self, devPath, sender=None):
-		pass
+		uid = VirtUtil.dbusGetUserId(self.connection, sender)
+		self.param.vfioDevManager.releaseVfioDevice(uid, devPath)
 
 class DbusNetworkObject(dbus.service.Object):
 
