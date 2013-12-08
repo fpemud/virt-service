@@ -70,12 +70,18 @@ class DbusMainObject(dbus.service.Object):
 		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
 		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService')
 
+		self.handle1 = dbus.SystemBus().add_signal_receiver(self.onNameOwnerChanged, 'NameOwnerChanged', None, None)
+
 	def release(self):
 		assert len(self.netObjList) == 0
 
+		dbus.SystemBus().remove_signal_receiver(self.handle1)
 		self.remove_from_connection()
 		self.sambaServer.release()
 		self.dhcpServer.release()
+
+	def onNameOwnerChanged(self, name, old, new):
+		pass
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', 
 	                     in_signature='s', out_signature='i')
