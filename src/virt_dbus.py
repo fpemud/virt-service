@@ -55,8 +55,9 @@ from virt_samba_server import VirtSambaServer
 # Signals:
 #
 
-class VirtServiceException(dbus.DBusException):
-    _dbus_error_name = 'org.fpemud.VirtService.Exception'
+class VirtServiceException(Exception):
+	def __init__(self, msg):
+		self.msg = msg
 
 class DbusMainObject(dbus.service.Object):
 
@@ -98,7 +99,7 @@ class DbusMainObject(dbus.service.Object):
 			if not found:
 				break
 			if nid >= 6:
-				raise Exception("network number limit is reached")
+				raise VirtServiceException("network number limit is reached")
 			nid = nid + 1
 			continue
 
@@ -130,12 +131,10 @@ class DbusMainObject(dbus.service.Object):
 					found = True
 					break
 			if not found:
-				raise Exception("the specified network does not exist")
+				raise VirtServiceException("the specified network does not exist")
 		finally:
-			# service exits when the last network is deleted
 			if len(self.netObjList) == 0:
 				VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
-#				self.param.mainloop.quit()
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
 	                     in_signature='s', out_signature='s')
@@ -172,7 +171,7 @@ class DbusNetworkObject(dbus.service.Object):
 		elif self.networkType == "isolate":
 			self.netObj = VirtNetworkIsolate(self.param, self.uid, self.nid)
 		else:
-			raise Exception("invalid networkType %s"%(networkType))
+			raise VirtServiceException("invalid networkType %s"%(networkType))
 
 		# enable server
 		if self.networkType in ["nat", "route"]:
@@ -219,7 +218,7 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# find existing vm object
 		if vmName in self.vmIdDict:
-			raise Exception("virt-machine already exists")
+			raise VirtServiceException("virt-machine already exists")
 
 		# allocate vmId, range is [0, 31]
 		vmId = 0
@@ -227,7 +226,7 @@ class DbusNetworkObject(dbus.service.Object):
 			if vmId not in self.vmIdDict.values():
 				break
 			if vmId >= 31:
-				raise Exception("virtual machine number limit is reached")
+				raise VirtServiceException("virtual machine number limit is reached")
 			vmId = vmId + 1
 			continue
 
@@ -245,7 +244,7 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# find existing vm object
 		if vmId not in self.vmIdDict.values():
-			raise Exception("virt-machine does not exist")
+			raise VirtServiceException("virt-machine does not exist")
 
 		self.netObj.removeVm(vmId)
 
@@ -262,7 +261,7 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# find existing vm object
 		if vmId not in self.vmIdDict.values():
-			raise Exception("virt-machine does not exist")
+			raise VirtServiceException("virt-machine does not exist")
 
 		# get tap interface
 		return self.netObj.getTapInterface(vmId)
@@ -275,7 +274,7 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# find existing vm object
 		if vmId not in self.vmIdDict.values():
-			raise Exception("virt-machine does not exist")
+			raise VirtServiceException("virt-machine does not exist")
 
 		return VirtUtil.getVmMacAddress(self.param.macOuiVm, self.uid, self.nid, vmId)
 
@@ -286,7 +285,7 @@ class DbusNetworkObject(dbus.service.Object):
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		if not srcPath.startswith("/"):
-			raise Exception("srcPath must be absoulte path")
+			raise VirtServiceException("srcPath must be absoulte path")
 
 		# do job
 		return self.gSambaServer.networkAddShare(self.uid, self.nid, vmId, shareName, srcPath, readonly)
