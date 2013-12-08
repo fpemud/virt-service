@@ -32,6 +32,7 @@ install:
 	cp -r src/* "$(DESTDIR)/$(prefix)/libexec/virt-service"
 	find "$(DESTDIR)/$(prefix)/libexec/virt-service" -type f | xargs chmod 644
 	find "$(DESTDIR)/$(prefix)/libexec/virt-service" -type d | xargs chmod 755
+	chmod 755 "$(DESTDIR)/$(prefix)/libexec/virt-service/virt-service"
 
 #	install -d -m 0755 "$(DESTDIR)/etc/xdg/menus"
 #	cp desktop/*.menu "$(DESTDIR)/etc/xdg/menus"
