@@ -98,6 +98,25 @@ class DbusMainObject(dbus.service.Object):
 		self.sambaServer.release()
 		self.dhcpServer.release()
 
+	def abort(self):
+		for i in reversed(range(0, len(self.netObjList))):
+			nobj = self.netObjList[i]
+
+			for j in reversed(range(0, len(nobj.sambaShareObjList))):
+				ssobj = nobj.sambaShareObjList.pop(j)
+				ssobj.release()
+
+			for j in reversed(range(0, len(nobj.vmObjList))):
+				vobj = nobj.vmObjList.pop(j)
+				vobj.release()
+
+			self.netObjList.pop(i)
+			nobj.release()
+			if len(self.netObjList) == 0:
+				VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
+
+		self.release()
+
 	def onNameOwnerChanged(self, name, old, new):
 		if not name.startswith(":") or new != "":
 			return
