@@ -290,7 +290,10 @@ class DbusNetworkObject(dbus.service.Object):
 		if not srcPath.startswith("/"):
 			raise VirtServiceException("srcPath must be absoulte path")
 
-		shareId = self.sambaShareObjList[-1].shareId + 1
+		if len(self.sambaShareObjList) > 0:
+			shareId = self.sambaShareObjList[-1].shareId + 1
+		else:
+			shareId = 1
 		shareObj = DbusNetSambaShareObject(self.param, self.uid, self.nid, self.gSambaServer, vmId, shareName, shareId, srcPath, readonly)
 		self.sambaShareObjList.append(shareObj)
 
