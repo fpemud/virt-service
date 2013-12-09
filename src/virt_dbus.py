@@ -46,12 +46,30 @@ from virt_samba_server import VirtSambaServer
 # Methods:
 # vmId:int         AddVm(vmName:string)
 # void             DeleteVm(vmId:int)
-# tapifname:string GetTapInterface(vmId:int)
-# macaddr:string   GetTapVmMacAddress(vmId:int)
-# void             SambaAddShare(vmId:int, shareName:string, srcPath:string, readonly:boolean)
-# void             SambaDeleteShare(vmId:int, shareName:string)
-# account:string   SambaGetAccount(vmId:int)
+# shareId:int      AddSambaShare(vmId:int, shareName:string, srcPath:string, readonly:boolean)
+# void             DeleteSambaShare(vmId:int, shareName:string)
 # 
+# Signals:
+#
+# ==== NetVirtMachine ====
+# Service               org.fpemud.VirtService
+# Interface             org.fpemud.VirtService.NetVirtMachine
+# Object path           /{user-id:int}/Networks/{networkId:int}/NetVirtMachines/{vmId:int}
+#
+# Methods:
+# tapifname:string GetTapInterface()
+# macaddr:string   GetTapVmMacAddress()
+#
+# Signals:
+#
+# ==== NetSambaShare ====
+# Service               org.fpemud.VirtService
+# Interface             org.fpemud.VirtService.NetSambaShare
+# Object path           /{user-id:int}/Networks/{networkId:int}/NetSambaShares/{shareId:int}
+#
+# Methods:
+# account:string   GetAccount()
+#
 # Signals:
 #
 
@@ -163,6 +181,8 @@ class DbusNetworkObject(dbus.service.Object):
 		self.networkType = networkType
 		self.gDhcpServer = dhcpServer
 		self.gSambaServer = sambaServer
+		self.vmObjList = []
+		self.sambaShareObjList = []
 
 		# create network temp directory
 		os.makedirs(os.path.join(self.param.tmpDir, str(self.uid), str(self.nid)))
@@ -188,15 +208,13 @@ class DbusNetworkObject(dbus.service.Object):
 		if self.networkType in ["bridge", "nat", "route"]:
 			self.param.hostNetwork.registerEventCallback(self.netObj)
 
-		# create data structure
-		self.vmIdDict = dict()		# vmName -> vmId
-
 		# register dbus object path
 		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
 		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d'%(self.uid, self.nid))
 
 	def release(self):
-		assert len(self.vmIdDict) == 0
+		assert len(self.vmObjList) == 0
+		assert len(self.sambaShareObjList) == 0
 
 		# deregister dbus object path
 		self.remove_from_connection()
@@ -223,22 +241,28 @@ class DbusNetworkObject(dbus.service.Object):
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# find existing vm object
-		if vmName in self.vmIdDict:
-			raise VirtServiceException("virt-machine already exists")
+		for vo in self.vmObjList:
+			if vo.vmName == vmName:
+				raise VirtServiceException("virtual machine already exists")
 
 		# allocate vmId, range is [0, 31]
 		vmId = 0
 		while True:
-			if vmId not in self.vmIdDict.values():
+			found = False
+			for vo in self.vmObjList:
+				if vo.vmId == vmId:
+					found = True
+					break
+			if not found:
 				break
 			if vmId >= 31:
 				raise VirtServiceException("virtual machine number limit is reached")
 			vmId = vmId + 1
 			continue
 
-		# add virtual machine
-		self.netObj.addVm(vmId)
-		self.vmIdDict[vmName] = vmId
+		# create new virtual machine object
+		vmObj = DbusNetVmObject(self.param, self.uid, self.netObj, self.nid, vmName, vmId)
+		self.vmObjList.append(vmObj)
 
 		return vmId
 
@@ -249,70 +273,113 @@ class DbusNetworkObject(dbus.service.Object):
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# find existing vm object
-		if vmId not in self.vmIdDict.values():
-			raise VirtServiceException("virt-machine does not exist")
+		for i in range(0, len(self.vmObjList)):
+			if self.vmObjList[i].vmId == vmId:
+				vo = self.vmObjList.pop(i)
+				vo.release()
+				return
 
-		self.netObj.removeVm(vmId)
-
-		for k in self.vmIdDict:
-			if self.vmIdDict[k] == vmId:
-				del self.vmIdDict[k]
-				break
-
-	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
-	                     in_signature='i', out_signature='s')
-	def GetTapInterface(self, vmId, sender=None):
-		# check user id
-		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
-
-		# find existing vm object
-		if vmId not in self.vmIdDict.values():
-			raise VirtServiceException("virt-machine does not exist")
-
-		# get tap interface
-		return self.netObj.getTapInterface(vmId)
-
-	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
-	                     in_signature='i', out_signature='s')
-	def GetTapVmMacAddress(self, vmId, sender=None):
-		# check user id
-		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
-
-		# find existing vm object
-		if vmId not in self.vmIdDict.values():
-			raise VirtServiceException("virt-machine does not exist")
-
-		return VirtUtil.getVmMacAddress(self.param.macOuiVm, self.uid, self.nid, vmId)
+		raise VirtServiceException("virtual machine does not exist")
 
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='issb')
-	def SambaAddShare(self, vmId, shareName, srcPath, readonly, sender=None):
+	def AddSambaShare(self, vmId, shareName, srcPath, readonly, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		if not srcPath.startswith("/"):
 			raise VirtServiceException("srcPath must be absoulte path")
 
-		# do job
-		return self.gSambaServer.networkAddShare(self.uid, self.nid, vmId, shareName, srcPath, readonly)
+		shareId = self.sambaShareObjList[-1].shareId + 1
+		shareObj = DbusNetSambaShareObject(self.param, self.uid, self.nid, self.gSambaServer, vmId, shareName, shareId, srcPath, readonly)
+		self.sambaShareObjList.append(shareObj)
+
+		return shareId
 
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='is')
-	def SambaDeleteShare(self, vmId, shareName, sender=None):
+	def DeleteSambaShare(self, vmId, shareName, sender=None):
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
+
+		# find existing share object
+		for i in range(0, len(self.vmObjList)):
+			if self.sambaShareObjList[i].vmId == vmId and self.sambaShareObjList[i].shareName == shareName:
+				so = self.sambaShareObjList.pop(i)
+				so.release()
+				return
+
+		raise VirtServiceException("samba share does not exist")
+
+class DbusNetVmObject(dbus.service.Object):
+
+	def __init__(self, param, uid, netObj, nid, vmName, vmId):
+		self.param = param
+		self.uid = uid
+		self.netObj = netObj
+		self.nid = nid
+		self.vmName = vmName
+		self.vmId = vmId
+
+		# add vm object
+		self.netObj.addVm(vmId)
+
+		# register dbus object path
+		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
+		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d/NetVirtMachines/%d'%(self.uid, self.nid, self.vmId))
+
+	def release(self):
+		self.remove_from_connection()
+		self.netObj.removeVm(self.vmId)
+
+	@dbus.service.method('org.fpemud.VirtService.NetVirtMachine', sender_keyword='sender',
+	                     out_signature='s')
+	def GetTapInterface(self, sender=None):
+		# check user id
+		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
+
+		# get tap interface
+		return self.netObj.getTapInterface(self.vmId)
+
+	@dbus.service.method('org.fpemud.VirtService.NetVirtMachine', sender_keyword='sender',
+	                     out_signature='s')
+	def GetTapVmMacAddress(self, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# do job
-		return self.gSambaServer.networkRemoveShare(self.uid, self.nid, vmId, shareName)
+		return VirtUtil.getVmMacAddress(self.param.macOuiVm, self.uid, self.nid, self.vmId)
 
-	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
-	                     in_signature='i', out_signature='s')
-	def SambaGetAccount(self, vmId, sender=None):
+class DbusNetSambaShareObject(dbus.service.Object):
+
+	def __init__(self, param, uid, nid, sambaServer, vmId, shareName, shareId, srcPath, readonly):
+		self.param = param
+		self.uid = uid
+		self.nid = nid
+		self.gSambaServer = sambaServer
+		self.vmId = vmId
+		self.shareName = shareName
+		self.shareId = shareId
+		self.srcPath = srcPath
+		self.readonly = readonly
+
+		self.gSambaServer.networkAddShare(self.uid, self.nid, self.vmId, self.shareName, self.srcPath, self.readonly)
+
+		# register dbus object path
+		bus_name = dbus.service.BusName('org.fpemud.VirtService', bus=dbus.SystemBus())
+		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d/NetSambaShares/%d'%(self.uid, self.nid, self.shareId))
+
+	def release(self):
+		self.remove_from_connection()
+		self.gSambaServer.networkRemoveShare(self.uid, self.nid, self.vmId, self.shareName)
+
+	@dbus.service.method('org.fpemud.VirtService.NetSambaShare', sender_keyword='sender',
+	                     out_signature='s')
+	def GetAccount(self, sender=None):
 		# check user id
 		VirtUtil.dbusCheckUserId(self.connection, sender, self.uid)
 
 		# do job
 		username, password = self.gSambaServer.networkGetAccountInfo(self.uid, self.nid)
 		return "%s:%s"%(username, password)
-
 
