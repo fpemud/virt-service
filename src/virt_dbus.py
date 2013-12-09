@@ -99,7 +99,31 @@ class DbusMainObject(dbus.service.Object):
 		self.dhcpServer.release()
 
 	def onNameOwnerChanged(self, name, old, new):
-		pass
+		if not name.startswith(":") or new != "":
+			return
+
+		assert name == old
+		for i in reversed(range(0, len(self.netObjList))):
+			nobj = self.netObjList[i]
+
+			for j in reversed(range(0, len(nobj.sambaShareObjList))):
+				ssobj = nobj.sambaShareObjList[j]
+				if ssobj.owner == name:
+					nobj.sambaShareObjList.pop(j)
+					ssobj.release()
+
+			for j in reversed(range(0, len(nobj.vmObjList))):
+				vobj = nobj.vmObjList[j]
+				if vobj.owner == name:
+					nobj.vmObjList.pop(j)
+					vobj.release()
+
+			while name in nobj.ownerList:
+				if nobj.removeOwner(name):
+					self.netObjList.pop(i)
+					nobj.release()
+					if len(self.netObjList) == 0:
+						VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', 
 	                     in_signature='s', out_signature='i')
@@ -110,7 +134,7 @@ class DbusMainObject(dbus.service.Object):
 		# find existing network object
 		for no in self.netObjList:
 			if no.uid == uid and no.networkType == networkType:
-				no.refCount = no.refCount + 1
+				no.addOwner(sender)
 				return no.nid
 
 		# allocate network id, range is [1, 6]
@@ -129,7 +153,7 @@ class DbusMainObject(dbus.service.Object):
 
 		# create new network object
 		netObj = DbusNetworkObject(self.param, uid, nid, networkType, self.dhcpServer, self.sambaServer)
-		netObj.refCount = 1												# fixme: strange, maintain refcount out side the object
+		netObj.addOwner(sender)
 		self.netObjList.append(netObj)
 
 		# open ipv4 forwarding, now no other program needs it, so we do a simple implementation
@@ -143,22 +167,17 @@ class DbusMainObject(dbus.service.Object):
 		# get user id
 		uid = VirtUtil.dbusGetUserId(self.connection, sender)
 
-		try:
-			# find and delete network object
-			found = False
-			for i in range(0, len(self.netObjList)):
-				if self.netObjList[i].uid == uid and self.netObjList[i].nid == nid:
-					self.netObjList[i].refCount -= 1
-					if self.netObjList[i].refCount == 0:
-						no = self.netObjList.pop(i)
-						no.release()
-					found = True
-					break
-			if not found:
-				raise VirtServiceException("the specified network does not exist")
-		finally:
-			if len(self.netObjList) == 0:
-				VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
+		# find and delete network object
+		for i in range(0, len(self.netObjList)):
+			if self.netObjList[i].uid == uid and self.netObjList[i].nid == nid:
+				if self.netObjList[i].removeOwner(sender):
+					no = self.netObjList.pop(i)
+					no.release()
+					if len(self.netObjList) == 0:
+						VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
+				return
+
+		raise VirtServiceException("the specified network does not exist")
 
 	@dbus.service.method('org.fpemud.VirtService', sender_keyword='sender',
 	                     in_signature='s', out_signature='s')
@@ -181,6 +200,8 @@ class DbusNetworkObject(dbus.service.Object):
 		self.networkType = networkType
 		self.gDhcpServer = dhcpServer
 		self.gSambaServer = sambaServer
+
+		self.ownerList = []
 		self.vmObjList = []
 		self.sambaShareObjList = []
 
@@ -213,6 +234,7 @@ class DbusNetworkObject(dbus.service.Object):
 		dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/Networks/%d'%(self.uid, self.nid))
 
 	def release(self):
+		assert len(self.ownerList) == 0
 		assert len(self.vmObjList) == 0
 		assert len(self.sambaShareObjList) == 0
 
@@ -233,6 +255,13 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# delete network temp directory
 		shutil.rmtree(os.path.join(self.param.tmpDir, str(self.uid), str(self.nid)))
+
+	def addOwner(self, owner):
+		self.ownerList.append(owner)
+
+	def removeOwner(self, owner):
+		self.ownerList.remove(owner)
+		return len(self.ownerList) == 0
 
 	@dbus.service.method('org.fpemud.VirtService.Network', sender_keyword='sender',
 	                     in_signature='s', out_signature='i')
@@ -262,6 +291,7 @@ class DbusNetworkObject(dbus.service.Object):
 
 		# create new virtual machine object
 		vmObj = DbusNetVmObject(self.param, self.uid, self.netObj, self.nid, vmName, vmId)
+		vmObj.setOwner(sender)
 		self.vmObjList.append(vmObj)
 
 		return vmId
@@ -290,11 +320,15 @@ class DbusNetworkObject(dbus.service.Object):
 		if not srcPath.startswith("/"):
 			raise VirtServiceException("srcPath must be absoulte path")
 
+		# allocate shareId
 		if len(self.sambaShareObjList) > 0:
 			shareId = self.sambaShareObjList[-1].shareId + 1
 		else:
 			shareId = 1
+
+		# create new samba share object
 		shareObj = DbusNetSambaShareObject(self.param, self.uid, self.nid, self.gSambaServer, vmId, shareName, shareId, srcPath, readonly)
+		shareObj.setOwner(sender)
 		self.sambaShareObjList.append(shareObj)
 
 		return shareId
@@ -324,6 +358,8 @@ class DbusNetVmObject(dbus.service.Object):
 		self.vmName = vmName
 		self.vmId = vmId
 
+		self.owner = ""
+
 		# add vm object
 		self.netObj.addVm(vmId)
 
@@ -334,6 +370,9 @@ class DbusNetVmObject(dbus.service.Object):
 	def release(self):
 		self.remove_from_connection()
 		self.netObj.removeVm(self.vmId)
+
+	def setOwner(self, owner):
+		self.owner = owner
 
 	@dbus.service.method('org.fpemud.VirtService.NetVirtMachine', sender_keyword='sender',
 	                     out_signature='s')
@@ -366,6 +405,8 @@ class DbusNetSambaShareObject(dbus.service.Object):
 		self.srcPath = srcPath
 		self.readonly = readonly
 
+		self.owner = ""
+
 		self.gSambaServer.networkAddShare(self.uid, self.nid, self.vmId, self.shareName, self.srcPath, self.readonly)
 
 		# register dbus object path
@@ -375,6 +416,9 @@ class DbusNetSambaShareObject(dbus.service.Object):
 	def release(self):
 		self.remove_from_connection()
 		self.gSambaServer.networkRemoveShare(self.uid, self.nid, self.vmId, self.shareName)
+
+	def setOwner(self, owner):
+		self.owner = owner
 
 	@dbus.service.method('org.fpemud.VirtService.NetSambaShare', sender_keyword='sender',
 	                     out_signature='s')
