@@ -10,299 +10,299 @@ import pwd
 import socket
 import re
 
+
 class VirtUtil:
 
-	@staticmethod
-	def getSysctl(name):
-		msg = VirtUtil.shell("/sbin/sysctl -n %s"%(name), "stdout")
-		return msg.rstrip('\n')
+    @staticmethod
+    def getSysctl(name):
+        msg = VirtUtil.shell("/sbin/sysctl -n %s" % (name), "stdout")
+        return msg.rstrip('\n')
 
-	@staticmethod
-	def setSysctl(name, value):
-		return
+    @staticmethod
+    def setSysctl(name, value):
+        return
 
-	@staticmethod
-	def copyToDir(srcFilename, dstdir, mode=None):
-		"""Copy file to specified directory, and set file mode if required"""
+    @staticmethod
+    def copyToDir(srcFilename, dstdir, mode=None):
+        """Copy file to specified directory, and set file mode if required"""
 
-		if not os.path.isdir(dstdir):
-			os.makedirs(dstdir)
-		fdst = os.path.join(dstdir, os.path.basename(srcFilename))
-		shutil.copy(srcFilename, fdst)
-		if mode is not None:
-			VirtUtil.shell("/bin/chmod " + mode + " \"" + fdst + "\"")
+        if not os.path.isdir(dstdir):
+            os.makedirs(dstdir)
+        fdst = os.path.join(dstdir, os.path.basename(srcFilename))
+        shutil.copy(srcFilename, fdst)
+        if mode is not None:
+            VirtUtil.shell("/bin/chmod " + mode + " \"" + fdst + "\"")
 
-	@staticmethod
-	def copyToFile(srcFilename, dstFilename, mode=None):
-		"""Copy file to specified filename, and set file mode if required"""
+    @staticmethod
+    def copyToFile(srcFilename, dstFilename, mode=None):
+        """Copy file to specified filename, and set file mode if required"""
 
-		if not os.path.isdir(os.path.dirname(dstFilename)):
-			os.makedirs(os.path.dirname(dstFilename))
-		shutil.copy(srcFilename, dstFilename)
-		if mode is not None:
-			VirtUtil.shell("/bin/chmod " + mode + " \"" + dstFilename + "\"")
+        if not os.path.isdir(os.path.dirname(dstFilename)):
+            os.makedirs(os.path.dirname(dstFilename))
+        shutil.copy(srcFilename, dstFilename)
+        if mode is not None:
+            VirtUtil.shell("/bin/chmod " + mode + " \"" + dstFilename + "\"")
 
-	@staticmethod
-	def readFile(filename):
-		"""Read file, returns the whold content"""
+    @staticmethod
+    def readFile(filename):
+        """Read file, returns the whold content"""
 
-		f = open(filename, 'r')
-		buf = f.read()
-		f.close()
-		return buf
+        f = open(filename, 'r')
+        buf = f.read()
+        f.close()
+        return buf
 
-	@staticmethod
-	def writeFile(filename, buf, mode=None):
-		"""Write buffer to file"""
+    @staticmethod
+    def writeFile(filename, buf, mode=None):
+        """Write buffer to file"""
 
-		f = open(filename, 'w')
-		f.write(buf)
-		f.close()
-		if mode is not None:
-			VirtUtil.shell("/bin/chmod " + mode + " \"" + filename + "\"")
+        f = open(filename, 'w')
+        f.write(buf)
+        f.close()
+        if mode is not None:
+            VirtUtil.shell("/bin/chmod " + mode + " \"" + filename + "\"")
 
-	@staticmethod
-	def mkDirAndClear(dirname):
-		VirtUtil.forceDelete(dirname)
-		os.mkdir(dirname)
+    @staticmethod
+    def mkDirAndClear(dirname):
+        VirtUtil.forceDelete(dirname)
+        os.mkdir(dirname)
 
-	@staticmethod
-	def touchFile(filename):
-		assert not os.path.exists(filename)
-		f = open(filename, 'w')
-		f.close()
+    @staticmethod
+    def touchFile(filename):
+        assert not os.path.exists(filename)
+        f = open(filename, 'w')
+        f.close()
 
-	@staticmethod
-	def forceDelete(filename):
-		if os.path.islink(filename):
-			os.remove(filename)
-		elif os.path.isfile(filename):
-			os.remove(filename)
-		elif os.path.isdir(filename):
-			shutil.rmtree(filename)
+    @staticmethod
+    def forceDelete(filename):
+        if os.path.islink(filename):
+            os.remove(filename)
+        elif os.path.isfile(filename):
+            os.remove(filename)
+        elif os.path.isdir(filename):
+            shutil.rmtree(filename)
 
-	@staticmethod
-	def forceSymlink(source, link_name):
-		if os.path.exists(link_name):
-			os.remove(link_name)
-		os.symlink(source, link_name)
+    @staticmethod
+    def forceSymlink(source, link_name):
+        if os.path.exists(link_name):
+            os.remove(link_name)
+        os.symlink(source, link_name)
 
-	@staticmethod
-	def getFreeSocketPort(portType, portStart, portEnd):
-		if portType == "tcp":
-			sType = socket.SOCK_STREAM
-		elif portType == "udp":
-			assert False
-		else:
-			assert False
+    @staticmethod
+    def getFreeSocketPort(portType, portStart, portEnd):
+        if portType == "tcp":
+            sType = socket.SOCK_STREAM
+        elif portType == "udp":
+            assert False
+        else:
+            assert False
 
-		for port in range(portStart, portEnd+1):
-			s = socket.socket(socket.AF_INET, sType)
-			try:
-				s.bind((('', port)))
-				return port
-			except socket.error:
-				continue
-			finally:
-				s.close()
-		raise Exception("No valid %s port in [%d,%d]."%(portType, portStart, portEnd))
+        for port in range(portStart, portEnd + 1):
+            s = socket.socket(socket.AF_INET, sType)
+            try:
+                s.bind((('', port)))
+                return port
+            except socket.error:
+                continue
+            finally:
+                s.close()
+        raise Exception("No valid %s port in [%d,%d]." % (portType, portStart, portEnd))
 
-	@staticmethod
-	def shell(cmd, flags=""):
-		"""Execute shell command"""
+    @staticmethod
+    def shell(cmd, flags=""):
+        """Execute shell command"""
 
-		assert cmd.startswith("/")
+        assert cmd.startswith("/")
 
-		# Execute shell command, throws exception when failed
-		if flags == "":
-			retcode = subprocess.Popen(cmd, shell = True).wait()
-			if retcode != 0:
-				raise Exception("Executing shell command \"%s\" failed, return code %d"%(cmd, retcode))
-			return
+        # Execute shell command, throws exception when failed
+        if flags == "":
+            retcode = subprocess.Popen(cmd, shell=True).wait()
+            if retcode != 0:
+                raise Exception("Executing shell command \"%s\" failed, return code %d" % (cmd, retcode))
+            return
 
-		# Execute shell command, throws exception when failed, returns stdout+stderr
-		if flags == "stdout":
-			proc = subprocess.Popen(cmd,
-				                    shell = True,
-				                    stdout = subprocess.PIPE,
-				                    stderr = subprocess.STDOUT)
-			out = proc.communicate()[0]
-			if proc.returncode != 0:
-				raise Exception("Executing shell command \"%s\" failed, return code %d"%(cmd, proc.returncode))
-			return out
+        # Execute shell command, throws exception when failed, returns stdout+stderr
+        if flags == "stdout":
+            proc = subprocess.Popen(cmd,
+                                    shell=True,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+            out = proc.communicate()[0]
+            if proc.returncode != 0:
+                raise Exception("Executing shell command \"%s\" failed, return code %d" % (cmd, proc.returncode))
+            return out
 
-		# Execute shell command, returns (returncode,stdout+stderr)
-		if flags == "retcode+stdout":
-			proc = subprocess.Popen(cmd,
-				                    shell = True,
-				                    stdout = subprocess.PIPE,
-				                    stderr = subprocess.STDOUT)
-			out = proc.communicate()[0]
-			return (proc.returncode, out)
+        # Execute shell command, returns (returncode,stdout+stderr)
+        if flags == "retcode+stdout":
+            proc = subprocess.Popen(cmd,
+                                    shell=True,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+            out = proc.communicate()[0]
+            return (proc.returncode, out)
 
-		assert False
+        assert False
 
-	@staticmethod
-	def shellInteractive(cmd, strInput, flags=""):
-		"""Execute shell command with input interaction"""
+    @staticmethod
+    def shellInteractive(cmd, strInput, flags=""):
+        """Execute shell command with input interaction"""
 
-		assert cmd.startswith("/")
+        assert cmd.startswith("/")
 
-		# Execute shell command, throws exception when failed
-		if flags == "":
-			proc = subprocess.Popen(cmd,
-									shell = True,
-									stdin = subprocess.PIPE)
-			proc.communicate(strInput)
-			if proc.returncode != 0:
-				raise Exception("Executing shell command \"%s\" failed, return code %d"%(cmd, proc.returncode))
-			return
+        # Execute shell command, throws exception when failed
+        if flags == "":
+            proc = subprocess.Popen(cmd,
+                                    shell=True,
+                                    stdin=subprocess.PIPE)
+            proc.communicate(strInput)
+            if proc.returncode != 0:
+                raise Exception("Executing shell command \"%s\" failed, return code %d" % (cmd, proc.returncode))
+            return
 
-		# Execute shell command, throws exception when failed, returns stdout+stderr
-		if flags == "stdout":
-			proc = subprocess.Popen(cmd,
-									shell = True,
-									stdin = subprocess.PIPE,
-									stdout = subprocess.PIPE,
-									stderr = subprocess.STDOUT)
-			out = proc.communicate(strInput)[0]
-			if proc.returncode != 0:
-				raise Exception("Executing shell command \"%s\" failed, return code %d, output %s"%(cmd, proc.returncode, out))
-			return out
+        # Execute shell command, throws exception when failed, returns stdout+stderr
+        if flags == "stdout":
+            proc = subprocess.Popen(cmd,
+                                    shell=True,
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+            out = proc.communicate(strInput)[0]
+            if proc.returncode != 0:
+                raise Exception("Executing shell command \"%s\" failed, return code %d, output %s" % (cmd, proc.returncode, out))
+            return out
 
-		# Execute shell command, returns (returncode,stdout+stderr)
-		if flags == "retcode+stdout":
-			proc = subprocess.Popen(cmd,
-									shell = True,
-									stdin = subprocess.PIPE,
-									stdout = subprocess.PIPE,
-									stderr = subprocess.STDOUT)
-			out = proc.communicate(strInput)[0]
-			return (proc.returncode, out)
+        # Execute shell command, returns (returncode,stdout+stderr)
+        if flags == "retcode+stdout":
+            proc = subprocess.Popen(cmd,
+                                    shell=True,
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+            out = proc.communicate(strInput)[0]
+            return (proc.returncode, out)
 
-		assert False
+        assert False
 
-	@staticmethod
-	def ipMaskToLen(mask):
-		"""255.255.255.0 -> 24"""
+    @staticmethod
+    def ipMaskToLen(mask):
+        """255.255.255.0 -> 24"""
 
-		netmask = 0
-		netmasks = mask.split('.')
-		for i in range(0,len(netmasks)):
-			netmask *= 256
-			netmask += int(netmasks[i])
-		return 32 - (netmask ^ 0xFFFFFFFF).bit_length()
+        netmask = 0
+        netmasks = mask.split('.')
+        for i in range(0, len(netmasks)):
+            netmask *= 256
+            netmask += int(netmasks[i])
+        return 32 - (netmask ^ 0xFFFFFFFF).bit_length()
 
-	@staticmethod
-	def loadKernelModule(modname):
-		"""Loads a kernel module."""
+    @staticmethod
+    def loadKernelModule(modname):
+        """Loads a kernel module."""
 
-		VirtUtil.shell("/sbin/modprobe %s"%(modname))
+        VirtUtil.shell("/sbin/modprobe %s" % (modname))
 
-	@staticmethod
-	def initLog(filename):
-		VirtUtil.forceDelete(filename)
-		VirtUtil.writeFile(filename, "")
+    @staticmethod
+    def initLog(filename):
+        VirtUtil.forceDelete(filename)
+        VirtUtil.writeFile(filename, "")
 
-	@staticmethod
-	def printLog(filename, msg):
-		f = open(filename, 'a')
-		if msg != "":
-			f.write(time.strftime("%Y-%m-%d %H:%M:%S  ", time.localtime()))
-			f.write(msg)
-			f.write("\n")
-		else:
-			f.write("\n")
-		f.close()
+    @staticmethod
+    def printLog(filename, msg):
+        f = open(filename, 'a')
+        if msg != "":
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S  ", time.localtime()))
+            f.write(msg)
+            f.write("\n")
+        else:
+            f.write("\n")
+        f.close()
 
-	@staticmethod
-	def getUsername():
-		return pwd.getpwuid(os.getuid())[0]
+    @staticmethod
+    def getUsername():
+        return pwd.getpwuid(os.getuid())[0]
 
-	@staticmethod
-	def getGroups():
-		"""Returns the group name list of the current user"""
+    @staticmethod
+    def getGroups():
+        """Returns the group name list of the current user"""
 
-		uname = pwd.getpwuid(os.getuid())[0]
-		groups = [g.gr_name for g in grp.getgrall() if uname in g.gr_mem]
-		gid = pwd.getpwnam(uname).pw_gid
-		groups.append(grp.getgrgid(gid).gr_name)			# --fixme, should be prepend
-		return groups
+        uname = pwd.getpwuid(os.getuid())[0]
+        groups = [g.gr_name for g in grp.getgrall() if uname in g.gr_mem]
+        gid = pwd.getpwnam(uname).pw_gid
+        groups.append(grp.getgrgid(gid).gr_name)            # --fixme, should be prepend
+        return groups
 
-	@staticmethod
-	def getMaxTapId(brname):
-		ret = VirtUtil.shell('/bin/ifconfig -a', 'stdout')
-		matchList = re.findall("^%s.([0-9]+):"%(brname), ret, re.MULTILINE)
-		maxId = 0
-		for m in matchList:
-			if int(m) > maxId:
-				maxId = int(m)
-		return maxId
+    @staticmethod
+    def getMaxTapId(brname):
+        ret = VirtUtil.shell('/bin/ifconfig -a', 'stdout')
+        matchList = re.findall("^%s.([0-9]+):" % (brname), ret, re.MULTILINE)
+        maxId = 0
+        for m in matchList:
+            if int(m) > maxId:
+                maxId = int(m)
+        return maxId
 
-	@staticmethod
-	def getPidBySocket(socketInfo):
-		"""need to be run by root. socketInfo is like 0.0.0.0:80"""
+    @staticmethod
+    def getPidBySocket(socketInfo):
+        """need to be run by root. socketInfo is like 0.0.0.0:80"""
 
-		rc, ret = VirtUtil.shell("/bin/netstat -anp | grep \"%s\""%(socketInfo), "retcode+stdout")
-		if rc != 0:
-			return -1
-		print ret
+        rc, ret = VirtUtil.shell("/bin/netstat -anp | grep \"%s\"" % (socketInfo), "retcode+stdout")
+        if rc != 0:
+            return -1
+        print ret
 
-		m = re.search(" +([0-9]+)/.*$", ret, re.MULTILINE)
-		assert m is not None
-		return int(m.group(1))
+        m = re.search(" +([0-9]+)/.*$", ret, re.MULTILINE)
+        assert m is not None
+        return int(m.group(1))
 
-	@staticmethod
-	def dbusGetUserId(connection, sender):
-		if sender is None:
-			raise Exception("only accept user access")
-		return connection.get_unix_user(sender)
+    @staticmethod
+    def dbusGetUserId(connection, sender):
+        if sender is None:
+            raise Exception("only accept user access")
+        return connection.get_unix_user(sender)
 
-	@staticmethod
-	def dbusCheckUserId(connection, sender, uid):
-		if sender is None:
-			raise Exception("only accept user access")
-		if connection.get_unix_user(sender) != uid:
-			raise Exception("priviledge violation")
+    @staticmethod
+    def dbusCheckUserId(connection, sender, uid):
+        if sender is None:
+            raise Exception("only accept user access")
+        if connection.get_unix_user(sender) != uid:
+            raise Exception("priviledge violation")
 
-	@staticmethod
-	def tdbFileCreate(filename):
-		assert " " not in filename			# fixme, tdbtool can't operate filename with space
+    @staticmethod
+    def tdbFileCreate(filename):
+        assert " " not in filename            # fixme, tdbtool can't operate filename with space
 
-		inStr = ""
-		inStr += "create %s\n"%(filename)
-		inStr += "quit\n"
-		VirtUtil.shellInteractive("/usr/bin/tdbtool", inStr)
+        inStr = ""
+        inStr += "create %s\n" % (filename)
+        inStr += "quit\n"
+        VirtUtil.shellInteractive("/usr/bin/tdbtool", inStr)
 
-	@staticmethod
-	def tdbFileAddUser(filename, username, password):
-		"""can only add unix user"""
+    @staticmethod
+    def tdbFileAddUser(filename, username, password):
+        """can only add unix user"""
 
-		assert " " not in filename			# fixme, v can't operate filename with space
+        assert " " not in filename            # fixme, v can't operate filename with space
 
-		inStr = ""
-		inStr += "%s\n"%(password)
-		inStr += "%s\n"%(password)
-		VirtUtil.shellInteractive("/usr/bin/pdbedit -b tdbsam:%s -a \"%s\" -t"%(filename, username), inStr)
+        inStr = ""
+        inStr += "%s\n" % (password)
+        inStr += "%s\n" % (password)
+        VirtUtil.shellInteractive("/usr/bin/pdbedit -b tdbsam:%s -a \"%s\" -t" % (filename, username), inStr)
 
-	@staticmethod
-	def getVmMacAddress(macOuiVm, uid, nid, vmId):
-		"""get mac address for virtual machine
-		   this mac address is not the same as the mac address of the tap interface"""
+    @staticmethod
+    def getVmMacAddress(macOuiVm, uid, nid, vmId):
+        """get mac address for virtual machine
+           this mac address is not the same as the mac address of the tap interface"""
 
-		assert (nid >= 1 and nid < 7) and vmId < 32
-		mac4 = uid / 256
-		mac5 = uid % 256
-		mac6 = nid * 32 + vmId
-		return "%s:%02x:%02x:%02x"%(macOuiVm, mac4, mac5, mac6)
+        assert (nid >= 1 and nid < 7) and vmId < 32
+        mac4 = uid / 256
+        mac5 = uid % 256
+        mac6 = nid * 32 + vmId
+        return "%s:%02x:%02x:%02x" % (macOuiVm, mac4, mac5, mac6)
 
-	@staticmethod
-	def getVmIpAddress(ip1, uid, nid, vmId):
-		"""get ip address for virtual machine"""
+    @staticmethod
+    def getVmIpAddress(ip1, uid, nid, vmId):
+        """get ip address for virtual machine"""
 
-		assert (nid >= 1 and nid < 7) and vmId < 32
-		ip2 = uid / 256
-		ip3 = uid % 256
-		ip4 = nid * 32 + vmId
-		return "%d.%d.%d.%d"%(ip1, ip2, ip3, ip4)
-
+        assert (nid >= 1 and nid < 7) and vmId < 32
+        ip2 = uid / 256
+        ip3 = uid % 256
+        ip4 = nid * 32 + vmId
+        return "%d.%d.%d.%d" % (ip1, ip2, ip3, ip4)
