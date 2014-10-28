@@ -138,23 +138,23 @@ class _ServerGlobal:
         cfg.read("/etc/samba/smb.conf")
 
         if not cfg.has_option("global", "security") or cfg.get("global", "security") != "user":
-            raise Exception("Option \"global/security\" of main samba server must have value \"user\"")
+            raise Exception("option \"global/security\" of main samba server must have value \"user\"")
 
         if cfg.has_option("global", "passdb backend") and cfg.get("global", "passdb backend") != "tdbsam":
-            raise Exception("Option \"global/passdb backend\" of main samba server must have value \"tdbsam\"")
+            raise Exception("option \"global/passdb backend\" of main samba server must have value \"tdbsam\"")
 
         if cfg.has_option("global", "workgroup") and cfg.get("global", "workgroup") != "WORKGROUP":
-            raise Exception("Option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
+            raise Exception("option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
 
         if not os.path.isdir("/etc/samba/hosts.d"):
             raise Exception("per-host configuration directory (/etc/samba/hosts.d) does not exist")
-        if cfg.has_option("global", "include") and cfg.get("global", "include") != "hosts.d/%m.conf":
-            raise Exception("Option \"global/include\" of main samba server must have value \"hosts.d/%m.conf\"")
+        if cfg.has_option("global", "include") and cfg.get("global", "include") != "/etc/samba/hosts.d/%I.conf":
+            raise Exception("option \"global/include\" of main samba server must have value \"/etc/samba/hosts.d/%I.conf\"")
 
         ret = VirtUtil.shell("/usr/bin/pdbedit -L", "stdout")
         m = re.search("^nobody:[0-9]+:.*$", ret, re.MULTILINE)
         if m is None:
-            raise Exception("Main samba server must have user \"nobody\"")
+            raise Exception("main samba server must have user \"nobody\"")
 
     def updateShare(self):
         # recreate all the share files
