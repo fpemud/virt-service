@@ -7,48 +7,47 @@ import signal
 import shutil
 from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
-from virt_util import VirtUtil
 from virt_param import VirtParam
 from virt_dbus import DbusMainObject
 from virt_host_network import VirtHostNetwork
 from virt_vfiodev_manager import VirtVfioDeviceManager
 
-def signal_handler(signum = None, frame = None):
-	dbusMainObject.abort()
-	sys.exit(1)
+
+def signal_handler(signum=None, frame=None):
+    dbusMainObject.abort()
+    sys.exit(1)
 
 # create VirtParam object
 param = VirtParam()
 dbusMainObject = None
 try:
-	# create temp directory
-	param.tmpDir = "/tmp/virt-service"
-	os.mkdir(param.tmpDir)
+    # create temp directory
+    param.tmpDir = "/tmp/virt-service"
+    os.mkdir(param.tmpDir)
 
-	# create main loop
-	DBusGMainLoop(set_as_default=True)
-	param.mainloop = GLib.MainLoop()
+    # create main loop
+    DBusGMainLoop(set_as_default=True)
+    param.mainloop = GLib.MainLoop()
 
-	# create network manager of host machine
-	param.hostNetwork = VirtHostNetwork()
+    # create network manager of host machine
+    param.hostNetwork = VirtHostNetwork()
 
-	# create VFIO device manager
-	param.vfioDevManager = VirtVfioDeviceManager()
+    # create VFIO device manager
+    param.vfioDevManager = VirtVfioDeviceManager()
 
-	# create dbus root object
-	dbusMainObject = DbusMainObject(param)
+    # create dbus root object
+    dbusMainObject = DbusMainObject(param)
 
-	# connect signals
-	signal.signal(signal.SIGTERM, signal_handler)
-	signal.signal(signal.SIGINT, signal_handler)
-	signal.signal(signal.SIGHUP, signal_handler)
-	signal.signal(signal.SIGQUIT, signal_handler)
+    # connect signals
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
+    signal.signal(signal.SIGQUIT, signal_handler)
 
-	# start main loop
-	param.mainloop.run()
+    # start main loop
+    param.mainloop.run()
 finally:
-	if dbusMainObject is not None:
-		dbusMainObject.release()
-	if param.tmpDir is not None and os.path.exists(param.tmpDir):
-		shutil.rmtree(param.tmpDir)
-
+    if dbusMainObject is not None:
+        dbusMainObject.release()
+    if param.tmpDir is not None and os.path.exists(param.tmpDir):
+        shutil.rmtree(param.tmpDir)
