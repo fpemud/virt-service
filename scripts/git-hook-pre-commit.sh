@@ -2,6 +2,7 @@
 
 FILES="./src/virt-service"
 FILES="${FILES} $(find ./src -name '*.py' | tr '\n' ' ')"
+FILES="${FILES} $(find ./unittest -name '*.py' | tr '\n' ' ')"
 ERRFLAG=0
 
 OUTPUT=`pyflakes ${FILES} 2>&1`
