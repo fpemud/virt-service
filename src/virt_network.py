@@ -78,12 +78,12 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
         VirtUtil.shell('/bin/ifconfig "%s" hw ether "%s"' % (self.brname, self.brmac))
         VirtUtil.shell('/bin/ifconfig "%s" "%s" netmask "%s"' % (self.brname, self.brip, self.netmask))
         VirtUtil.shell('/bin/ifconfig "%s" up' % (self.brname))
-        VirtUtil.shell('/sbin/iptables -t nat -A POSTROUTING -s %s/%s -j MASQUERADE' % (self.netip, self.netmask))
+        self._addNftNatRule(self.netip, self.netmask)
 
     def release(self):
         assert len(self.tapDict) == 0
 
-        VirtUtil.shell('/sbin/iptables -t nat -D POSTROUTING -s %s/%s -j MASQUERADE' % (self.netip, self.netmask))
+        self._removeNftNatRule(self.netip, self.netmask)
         VirtUtil.shell('/bin/ifconfig "%s" down' % (self.brname))
         VirtUtil.shell('/sbin/brctl delbr "%s"' % (self.brname))
 
@@ -115,31 +115,30 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
         return self.tapDict[vmId]
 
     def _addNftNatRule(self, netip, netmask):
+        # create table
         rc, msg = VirtUtil.shell('/sbin/nft list table virt-service-nat', "retcode+stdout")
         if rc != 0:
             VirtUtil.shell('/sbin/nft add table ip virt-service-nat')
             VirtUtil.shell('/sbin/nft add chain virt-service-nat postrouting { type nat hook postrouting priority 0 \\; }')
-        VirtUtil.shell('/sbin/nft add rule virt-service-nat postrouting ip saddr %s/%s masquerade' % (netip, netmask))
+
+        # create rule
+        VirtUtil.shell('/sbin/nft add rule virt-service-nat postrouting ip saddr %s/%s masquerade' % (netip, VirtUtil.ipMaskToLen(netmask)))
 
     def _removeNftNatRule(self, netip, netmask):
-        msg = VirtUtil.shell('/sbin/nft list tables', "stdout")
-        m = re.search("^virt-service-nat$", msg, re.M)
+        # table must be there
+        assert re.search("^table virt-service-nat$", VirtUtil.shell('/sbin/nft list tables', "stdout"), re.M) is not None
+
+        # delete my rule
+        msg = VirtUtil.shell('/sbin/nft list table virt-service-nat -a', "stdout")
+        m = re.search("^.* %s/%s .* # handle ([0-9]+)$" % (netip, VirtUtil.ipMaskToLen(netmask)), msg, re.M)
+        if m is not None:
+            VirtUtil.shell('/sbin/nft delete rule virt-service-nat postrouting handle %s' % (m.group(1)))
+
+        # delete table if no rules left
+        msg = VirtUtil.shell('/sbin/nft list table virt-service-nat -a', "stdout")
+        m = re.search("handle [0-9]+", msg, re.M)
         if m is None:
-            return
-
-        msg = VirtUtil.shell('/sbin/nft list table virt-service-nat', "stdout")
-        m = re.match(self._nftNatTableRegexPattern(), msg)
-        assert m is not None
-
-    def _nftNatTableRegexPattern(self):
-        rePat = ""
-        rePat += "table ip virt-service-nat {\n"
-        rePat += "\s+chain postrouting {\n"
-        rePat += "\s+\s+type nat hook postrouting priority 0;\n"
-        rePat += "(\S\n)*"
-        rePat += "\s+}\n"
-        rePat += "}\n"
-        return rePat
+            VirtUtil.shell('/sbin/nft delete table virt-service-nat')
 
 
 class VirtNetworkRoute(VirtHostNetworkEventCallback):

@@ -1,0 +1,2 @@
+use "./test.py" to test.
+use "sudo ./env-reset.py" to clean up if any error occurs.

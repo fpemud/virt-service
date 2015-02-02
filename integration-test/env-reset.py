@@ -2,7 +2,6 @@
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
-import sys
 import re
 import time
 import subprocess
@@ -106,7 +105,9 @@ if __name__ == "__main__":
     assert os.path.exists("/usr/bin/ifconfig")
     assert os.path.exists("/usr/bin/ip")
     assert os.path.exists("/usr/bin/ps")
+    assert os.path.exists("/usr/bin/kill")
     assert os.path.exists("/usr/sbin/brctl")
+    assert os.path.exists("/usr/sbin/nft")
 
     for subintf in getSubInterfaceList():
         print "Removing sub-interface %s." % (subintf)
@@ -116,10 +117,8 @@ if __name__ == "__main__":
         print "Removing interface %s." % (intf)
         delBridgeInterface(intf)
 
-    pid = getProcessId("virt-service")
-    if pid is not None:
-        print "Error: virt-serivce process (id = %d) still exists, please kill it manually." % (pid)
-        sys.exit(1)
+    if getProcessId("virt-service") is not None:
+        killProcess("virt-service")
 
     if os.path.exists("/tmp/virt-service"):
         print "Removing directory /tmp/virt-service"
@@ -129,3 +128,11 @@ if __name__ == "__main__":
     if readFile("/proc/sys/net/ipv4/ip_forward").strip() != "0":
         print "Resetting /proc/sys/net/ipv4/ip_forward"
         writeFile("/proc/sys/net/ipv4/ip_forward", "0")
+
+    if True:
+        proc = subprocess.Popen("/usr/sbin/nft list tables", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        out = proc.communicate()[0]
+        assert proc.returncode == 0
+        if re.search("^table virt-service-nat$", out, re.M) is not None:
+            print "Deleting nftable virt-service-nat"
+            subprocess.Popen("/usr/sbin/nft delete table virt-service-nat", shell=True).wait()
