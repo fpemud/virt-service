@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
+import re
 from virt_util import VirtUtil
 from virt_host_network import VirtHostNetworkEventCallback
 
@@ -112,6 +113,33 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
 
     def getTapInterface(self, vmId):
         return self.tapDict[vmId]
+
+    def _addNftNatRule(self, netip, netmask):
+        rc, msg = VirtUtil.shell('/sbin/nft list table virt-service-nat', "retcode+stdout")
+        if rc != 0:
+            VirtUtil.shell('/sbin/nft add table ip virt-service-nat')
+            VirtUtil.shell('/sbin/nft add chain virt-service-nat postrouting { type nat hook postrouting priority 0 \\; }')
+        VirtUtil.shell('/sbin/nft add rule virt-service-nat postrouting ip saddr %s/%s masquerade' % (netip, netmask))
+
+    def _removeNftNatRule(self, netip, netmask):
+        msg = VirtUtil.shell('/sbin/nft list tables', "stdout")
+        m = re.search("^virt-service-nat$", msg, re.M)
+        if m is None:
+            return
+
+        msg = VirtUtil.shell('/sbin/nft list table virt-service-nat', "stdout")
+        m = re.match(self._nftNatTableRegexPattern(), msg)
+        assert m is not None
+
+    def _nftNatTableRegexPattern(self):
+        rePat = ""
+        rePat += "table ip virt-service-nat {\n"
+        rePat += "\s+chain postrouting {\n"
+        rePat += "\s+\s+type nat hook postrouting priority 0;\n"
+        rePat += "(\S\n)*"
+        rePat += "\s+}\n"
+        rePat += "}\n"
+        return rePat
 
 
 class VirtNetworkRoute(VirtHostNetworkEventCallback):

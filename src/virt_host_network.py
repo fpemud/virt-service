@@ -43,6 +43,7 @@ class VirtHostNetwork:
         newIntfSet = sets.Set()
         for oconn in props['ActiveConnections']:
             connObj = dbus.SystemBus().get_object('org.freedesktop.NetworkManager', oconn)
+            print connObj
             for odev in connObj.Get("org.freedesktop.NetworkManager.Connection.Active", "Devices", dbus_interface="org.freedesktop.DBus.Properties"):
                 devObj = dbus.SystemBus().get_object('org.freedesktop.NetworkManager', odev)
                 intf = devObj.Get("org.freedesktop.NetworkManager.Device", "IpInterface", dbus_interface="org.freedesktop.DBus.Properties")

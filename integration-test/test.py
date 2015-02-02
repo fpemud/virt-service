@@ -131,6 +131,9 @@ class Test_Network_NatVm(unittest.TestCase):
         subIntfSet2 = _getSubIntfSet("vnn%d" % (self.uid))
         self.assertTrue(len(subIntfSet2) - len(subIntfSet1) == 1)
 
+        ret = _testWebsite(list(subIntfSet2 - subIntfSet1)[0], "www.baidu.com")
+        self.assertTrue(ret)
+
         self.netObj.DeleteVm(vmId, dbus_interface='org.fpemud.VirtService.Network')
         subIntfSet3 = _getSubIntfSet("vnn%d" % (self.uid))
         self.assertEqual(subIntfSet1, subIntfSet3)
@@ -201,6 +204,18 @@ def _getSubIntfSet(intfname):
     ret2 = set(ret)
     assert len(ret2) == len(ret)
     return ret2
+
+
+def _testWebsite(intfname, website):
+    return True  # fixme
+
+    proc = subprocess.Popen("/usr/bin/ifconfig %s" % (intfname), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out = proc.communicate()[0]
+    assert proc.returncode == 0
+
+    localIp = re.search("inet ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", out).group(1)
+    ret = subprocess.Popen("/usr/bin/wget --bind-address %s www.baidu.com" % (localIp), shell=True).wait()
+    return ret == 0
 
 
 if __name__ == "__main__":

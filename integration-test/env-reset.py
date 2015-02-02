@@ -1,6 +1,8 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
+import os
+import sys
 import re
 import time
 import subprocess
@@ -38,21 +40,21 @@ def getSubInterfaceList():
 
 
 def delTunTapInterface(intfname):
-    brname, tapname = intfname.split(".")
-    ret = subprocess.Popen('/bin/ifconfig "%s" down' % (tapname), shell=True).wait()
-    assert ret
-    ret = subprocess.Popen('/sbin/brctl delif "%s" "%s"' % (brname, tapname), shell=True).wait()
-    assert ret
-    ret = subprocess.Popen('/bin/ip tuntap del dev "%s" mode tap' % (tapname), shell=True).wait()
-    assert ret
+    brname = intfname.split(".")[0]
+    ret = subprocess.Popen('/usr/bin/ifconfig "%s" down' % (intfname), shell=True).wait()
+    assert ret == 0
+    ret = subprocess.Popen('/usr/sbin/brctl delif "%s" "%s"' % (brname, intfname), shell=True).wait()
+    assert ret == 0
+    ret = subprocess.Popen('/usr/bin/ip tuntap del dev "%s" mode tap' % (intfname), shell=True).wait()
+    assert ret == 0
 
 
 def delBridgeInterface(intfname):
     brname = intfname
-    ret = subprocess.Popen('/bin/ifconfig "%s" down' % (brname), shell=True).wait()
-    assert ret
-    ret = subprocess.Popen('/sbin/brctl delbr "%s"' % (brname), shell=True).wait()
-    assert ret
+    ret = subprocess.Popen('/usr/bin/ifconfig "%s" down' % (brname), shell=True).wait()
+    assert ret == 0
+    ret = subprocess.Popen('/usr/sbin/brctl delbr "%s"' % (brname), shell=True).wait()
+    assert ret == 0
 
 
 def getProcessId(execName):
@@ -89,7 +91,23 @@ def killProcess(execName):
     assert False
 
 
+def readFile(filename):
+    with open(filename, "r") as f:
+        return f.read()
+
+
+def writeFile(filename, buf):
+    with open(filename, "w") as f:
+        f.write(buf)
+
+
 if __name__ == "__main__":
+    assert os.path.exists("/usr/bin/rm")
+    assert os.path.exists("/usr/bin/ifconfig")
+    assert os.path.exists("/usr/bin/ip")
+    assert os.path.exists("/usr/bin/ps")
+    assert os.path.exists("/usr/sbin/brctl")
+
     for subintf in getSubInterfaceList():
         print "Removing sub-interface %s." % (subintf)
         delTunTapInterface(subintf)
@@ -100,4 +118,14 @@ if __name__ == "__main__":
 
     pid = getProcessId("virt-service")
     if pid is not None:
-        print "Warning: virt-serivce process (id = %d) still exists." % (pid)
+        print "Error: virt-serivce process (id = %d) still exists, please kill it manually." % (pid)
+        sys.exit(1)
+
+    if os.path.exists("/tmp/virt-service"):
+        print "Removing directory /tmp/virt-service"
+        ret = subprocess.Popen('/usr/bin/rm -rf /tmp/virt-service', shell=True).wait()
+        assert ret == 0
+
+    if readFile("/proc/sys/net/ipv4/ip_forward").strip() != "0":
+        print "Resetting /proc/sys/net/ipv4/ip_forward"
+        writeFile("/proc/sys/net/ipv4/ip_forward", "0")
