@@ -119,6 +119,7 @@ class VirtNetworkNat(VirtHostNetworkEventCallback):
         rc, msg = VirtUtil.shell('/sbin/nft list table virt-service-nat', "retcode+stdout")
         if rc != 0:
             VirtUtil.shell('/sbin/nft add table ip virt-service-nat')
+            VirtUtil.shell('/sbin/nft add chain virt-service-nat prerouting { type nat hook prerouting priority 0 \\; }')
             VirtUtil.shell('/sbin/nft add chain virt-service-nat postrouting { type nat hook postrouting priority 0 \\; }')
 
         # create rule
