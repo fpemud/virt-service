@@ -247,7 +247,6 @@ class VirtUtil:
         rc, ret = VirtUtil.shell("/bin/netstat -anp | grep \"%s\"" % (socketInfo), "retcode+stdout")
         if rc != 0:
             return -1
-        print ret
 
         m = re.search(" +([0-9]+)/.*$", ret, re.MULTILINE)
         assert m is not None

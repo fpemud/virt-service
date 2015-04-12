@@ -19,3 +19,4 @@ class VirtParam:
         self.tmpDir = None
         self.macOuiVm = "00:50:01"
         self.ip1 = 10
+        self.ctrlPort = 2207
