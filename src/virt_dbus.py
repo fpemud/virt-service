@@ -16,61 +16,82 @@ from virt_samba_server import VirtSambaServer
 ################################################################################
 # DBus API Docs
 ################################################################################
-#
+
 # ==== Main Application ====
 # Service               org.fpemud.VirtService
 # Interface             org.fpemud.VirtService
 # Object path           /
 #
 # Methods:
-# networkId:int    NewNetwork(networkType:string)
-# void             DeleteNetwork(networkId:int)
-# devPath:string   NewVfioDevicePci(devName:string)
-# devPath:string   NewVfioDeviceVga(devName:string)
-# devPath:string   NewVfioDeviceUsb(devName:string)
-# void             DeleteVfioDevice(devPath:string)
+#   vmId:int         VmAttach(vmName:string, tapifname:string, tapifmac:string)
+#   void             VmDetach(vmId:int)
+#   boolean          VmHasControlChannel(vmId:int)
+#   networkId:int    NetworkNew(networkType:string)
+#   void             NetworkDelete(networkId:int)
+#   sambaShareId:int SambaShareNew(shareName:string, srcPath:string, readonly:boolean)
+#   void             SambaShareDelete(sambaShareId:int)
+#   vfioDeviceId:int VfioDeviceNew(devName:string, vfioType:string)
+#   void             VfioDeviceDelete(vfioDeviceId:int)
 #
 # Signals:
 #
 # Notes:
-#   networkType can be: bridge, nat, route
-#   one user can have 6 networks, one network can have 32 virtual machines, it's caused by ip/mac address allocation limit
-#   one user can only have one network of a same type
-#   service exits when the last network is deleted
+#   networkType can be: bridge, nat, route, isolate
+#   vfioType can be: pci, vga, usb
+#   one user can have 6 networks, one network can have 32 virtual machines, it's caused by ip/mac address allocation limit?
+#   one user can only have one network of a same type?
+#   service exits when the last network is deleted?
 #
+
+# ==== VirtMachine ====
+# Service               org.fpemud.VirtService
+# Interface             org.fpemud.VirtService.VirtMachine
+# Object path           /{user-id:int}/VirtMachines/{vmId:int}
+#
+# Methods:
+#   void             AddSambaShare(sambaShareId:int)
+#   void             RemoveSambaShare(sambaShareId:int)
+#   void             RunExecutable(filename:string, arguments:string)
+# Signals:
+#
+
 # ==== Network ====
 # Service               org.fpemud.VirtService
 # Interface             org.fpemud.VirtService.Network
 # Object path           /{user-id:int}/Networks/{networkId:int}
 #
 # Methods:
-# vmId:int         AddVm(vmName:string)
-# void             DeleteVm(vmId:int)
-# shareId:int      AddSambaShare(vmId:int, shareName:string, srcPath:string, readonly:boolean)
-# void             DeleteSambaShare(vmId:int, shareName:string)
+#   void             AddVm(vmId:int)
+#   void             RemoveVm(vmId:int)
 #
 # Signals:
 #
-# ==== NetVirtMachine ====
+# Notes:
+#   one virtual machine can only be added to one network simutanously
+#
+
+# ==== SambaShare ====
 # Service               org.fpemud.VirtService
-# Interface             org.fpemud.VirtService.NetVirtMachine
-# Object path           /{user-id:int}/Networks/{networkId:int}/NetVirtMachines/{vmId:int}
+# Interface             org.fpemud.VirtService.SambaShare
+# Object path           /{user-id:int}/SambaShares/{sambaShareId:int}
 #
 # Methods:
-# tapifname:string GetTapInterface()
-# macaddr:string   GetTapVmMacAddress()
 #
 # Signals:
 #
-# ==== NetSambaShare ====
+
+# ==== VfioDevice ====
 # Service               org.fpemud.VirtService
-# Interface             org.fpemud.VirtService.NetSambaShare
-# Object path           /{user-id:int}/Networks/{networkId:int}/NetSambaShares/{shareId:int}
+# Interface             org.fpemud.VirtService.VfioDevice
+# Object path           /{user-id:int}/VfioDevices/{vfioDeviceId:int}
 #
 # Methods:
-# account:string   GetAccount()
+#   devPath:string   GetDevPath()
 #
 # Signals:
+#
+# Notes:
+#   vfio device must be allocated before virtual machine is attached to virt-service
 #
 
 
