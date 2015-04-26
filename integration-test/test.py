@@ -186,14 +186,14 @@ def _fileRead(filename):
 
 
 def _intfExists(intfname):
-    proc = subprocess.Popen("/usr/bin/ifconfig -a", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen("/bin/ifconfig -a", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out = proc.communicate()[0]
     assert proc.returncode == 0
     return re.search("^%s:" % (intfname), out, re.M) is not None
 
 
 def _getSubIntfSet(intfname):
-    proc = subprocess.Popen("/usr/bin/ifconfig -a", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen("/bin/ifconfig -a", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out = proc.communicate()[0]
     assert proc.returncode == 0
 
@@ -209,7 +209,7 @@ def _getSubIntfSet(intfname):
 def _testWebsite(intfname, website):
     return True  # fixme
 
-    proc = subprocess.Popen("/usr/bin/ifconfig %s" % (intfname), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen("/bin/ifconfig %s" % (intfname), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out = proc.communicate()[0]
     assert proc.returncode == 0
 
