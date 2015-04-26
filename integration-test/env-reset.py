@@ -108,6 +108,7 @@ if __name__ == "__main__":
     assert os.path.exists("/bin/kill")
     assert os.path.exists("/sbin/brctl")
     assert os.path.exists("/sbin/nft")
+    assert os.getuid() == 0
 
     for subintf in getSubInterfaceList():
         print("Removing sub-interface %s." % (subintf))

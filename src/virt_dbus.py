@@ -71,6 +71,7 @@ from virt_samba_server import VirtSambaServer
 # Notes:
 #
 
+
 class VirtServiceException(Exception):
 
     def __init__(self, msg):
