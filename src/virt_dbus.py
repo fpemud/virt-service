@@ -16,84 +16,60 @@ from virt_samba_server import VirtSambaServer
 ################################################################################
 # DBus API Docs
 ################################################################################
-
+#
+#
 # ==== Main Application ====
 # Service               org.fpemud.VirtService
 # Interface             org.fpemud.VirtService
 # Object path           /
 #
 # Methods:
-#   vmId:int         VmAttach(vmName:string, tapifname:string, tapifmac:string)
-#   void             VmDetach(vmId:int)
-#   boolean          VmHasControlChannel(vmId:int)
-#   networkId:int    NetworkNew(networkType:string)
-#   void             NetworkDelete(networkId:int)
-#   sambaShareId:int SambaShareNew(shareName:string, srcPath:string, readonly:boolean)
-#   void             SambaShareDelete(sambaShareId:int)
-#   vfioDeviceId:int VfioDeviceNew(devName:string, vfioType:string)
-#   void             VfioDeviceDelete(vfioDeviceId:int)
+#   vmResSetId:int        NewVmResSet()
+#   void                  DeleteVmResSet(vmResSetId:int)
+#   vmId:int              AttachVm(vmName:string, vmResSetId:int)
+#   void                  DetachVm(vmId:int)
 #
 # Signals:
 #
 # Notes:
-#   networkType can be: bridge, nat, route, isolate
-#   vfioType can be: pci, vga, usb
-#   one user can have 6 networks, one network can have 32 virtual machines, it's caused by ip/mac address allocation limit?
-#   one user can only have one network of a same type?
-#   service exits when the last network is deleted?
 #
-
+#
+# ==== VmResSet ====
+# Service               org.fpemud.VirtService
+# Interface             org.fpemud.VirtService.VmResSet
+# Object path           /{user-id:int}/VmResSets/{setId:int}
+#
+# Methods:
+#   (tapifname:string,macaddr:string)  GetTapIntfInfo()
+#   (devpath:string)                   GetVfioDevInfo(devId:int)
+#
+#   void                               AddTapIntf(networkName:string)
+#   void                               RemoveTapIntf()
+#   devId:int                          AddVfioDevice(devName:string, vfioType:string)
+#   void                               DeviceDelete(devId:int)
+#   sambaShareId:int                   SambaShareNew(shareName:string, srcPath:string, readonly:boolean)
+#   void                               SambaShareDelete(sambaShareId:int)
+#
+# Notes:
+#   networkName can be: bridge, nat, route, isolate
+#   vfioType can be: pci, vga, usb
+#   one network can have 32 virtual machines, it's caused by ip/mac address allocation limit?
+#   service exits when the last virtual-machine resource set is deleted?
+#
+#
 # ==== VirtMachine ====
 # Service               org.fpemud.VirtService
 # Interface             org.fpemud.VirtService.VirtMachine
 # Object path           /{user-id:int}/VirtMachines/{vmId:int}
 #
 # Methods:
-#   void             AddSambaShare(sambaShareId:int)
-#   void             RemoveSambaShare(sambaShareId:int)
-#   void             RunExecutable(filename:string, arguments:string)
-# Signals:
-#
-
-# ==== Network ====
-# Service               org.fpemud.VirtService
-# Interface             org.fpemud.VirtService.Network
-# Object path           /{user-id:int}/Networks/{networkId:int}
-#
-# Methods:
-#   void             AddVm(vmId:int)
-#   void             RemoveVm(vmId:int)
+#   boolean                            IsControlChannelEstablished()
+#   void                               RunExecutable(filename:string, arguments:string)
 #
 # Signals:
 #
 # Notes:
-#   one virtual machine can only be added to one network simutanously
 #
-
-# ==== SambaShare ====
-# Service               org.fpemud.VirtService
-# Interface             org.fpemud.VirtService.SambaShare
-# Object path           /{user-id:int}/SambaShares/{sambaShareId:int}
-#
-# Methods:
-#
-# Signals:
-#
-
-# ==== VfioDevice ====
-# Service               org.fpemud.VirtService
-# Interface             org.fpemud.VirtService.VfioDevice
-# Object path           /{user-id:int}/VfioDevices/{vfioDeviceId:int}
-#
-# Methods:
-#   devPath:string   GetDevPath()
-#
-# Signals:
-#
-# Notes:
-#   vfio device must be allocated before virtual machine is attached to virt-service
-#
-
 
 class VirtServiceException(Exception):
 
