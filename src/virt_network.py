@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
@@ -127,8 +127,8 @@ class VirtNetworkManager:
     def _allocId(self):
         for nid in range(1, 256 * 256):
             found = False
-            for netu in self.netDict.values():
-                for net in netu.values():
+            for netu in list(self.netDict.values()):
+                for net in list(netu.values()):
                     if net.nid == nid:
                         found = True
                         break

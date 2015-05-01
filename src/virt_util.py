@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
@@ -125,7 +125,7 @@ class VirtUtil:
 
         # Execute shell command, throws exception when failed
         if flags == "":
-            retcode = subprocess.Popen(cmd, shell=True).wait()
+            retcode = subprocess.Popen(cmd, shell=True, universal_newlines=True).wait()
             if retcode != 0:
                 raise Exception("Executing shell command \"%s\" failed, return code %d" % (cmd, retcode))
             return
@@ -133,18 +133,18 @@ class VirtUtil:
         # Execute shell command, throws exception when failed, returns stdout+stderr
         if flags == "stdout":
             proc = subprocess.Popen(cmd,
-                                    shell=True,
+                                    shell=True, universal_newlines=True,
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT)
             out = proc.communicate()[0]
             if proc.returncode != 0:
-                raise Exception("Executing shell command \"%s\" failed, return code %d" % (cmd, proc.returncode))
+                raise Exception("Executing shell command \"%s\" failed, return code %d, output %s" % (cmd, proc.returncode, out))
             return out
 
         # Execute shell command, returns (returncode,stdout+stderr)
         if flags == "retcode+stdout":
             proc = subprocess.Popen(cmd,
-                                    shell=True,
+                                    shell=True, universal_newlines=True,
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT)
             out = proc.communicate()[0]
@@ -161,7 +161,7 @@ class VirtUtil:
         # Execute shell command, throws exception when failed
         if flags == "":
             proc = subprocess.Popen(cmd,
-                                    shell=True,
+                                    shell=True, universal_newlines=True,
                                     stdin=subprocess.PIPE)
             proc.communicate(strInput)
             if proc.returncode != 0:
@@ -171,7 +171,7 @@ class VirtUtil:
         # Execute shell command, throws exception when failed, returns stdout+stderr
         if flags == "stdout":
             proc = subprocess.Popen(cmd,
-                                    shell=True,
+                                    shell=True, universal_newlines=True,
                                     stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT)
@@ -183,7 +183,7 @@ class VirtUtil:
         # Execute shell command, returns (returncode,stdout+stderr)
         if flags == "retcode+stdout":
             proc = subprocess.Popen(cmd,
-                                    shell=True,
+                                    shell=True, universal_newlines=True,
                                     stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT)

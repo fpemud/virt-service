@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import dbus
@@ -98,13 +98,13 @@ class DbusMainObject(dbus.service.Object):
             return
         assert name == old
 
-        for vmu in self.vmDict.values():
-            for vm in vmu.values():
+        for vmu in list(self.vmDict.values()):
+            for vm in list(vmu.values()):
                 if vm.owner == old:
                     self._vmRemove(vm.uid, vm.vmid, vm)
 
-        for ressetu in self.resSetDict.values():
-            for resset in ressetu.values():
+        for ressetu in list(self.resSetDict.values()):
+            for resset in list(ressetu.values()):
                 if resset.owner == old:
                     self._resSetRemove(resset.uid, resset.sid, resset)
 
@@ -190,7 +190,7 @@ class DbusMainObject(dbus.service.Object):
 
     def _resSetGetAttachedVm(self, uid, sid):
         if uid in self.vmDict:
-            for vmObj in self.vmDict[uid].values():
+            for vmObj in list(self.vmDict[uid].values()):
                 if vmObj.sid == sid:
                     return vmObj
         return None

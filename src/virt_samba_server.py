@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
@@ -8,7 +8,7 @@ import grp
 import shutil
 import signal
 import subprocess
-import ConfigParser
+import configparser
 from virt_util import VirtUtil
 
 
@@ -69,7 +69,7 @@ class VirtSambaServer:
 
         # disable or update server
         bShouldDisable = True
-        for netInfo in self.networkDict.values():
+        for netInfo in list(self.networkDict.values()):
             if len(netInfo.shareDict) > 0:
                 bShouldDisable = False
                 break
@@ -134,7 +134,7 @@ class _ServerGlobal:
     def checkServer(self):
         """Check if the configure of global server satisfy our requirement"""
 
-        cfg = ConfigParser.RawConfigParser()
+        cfg = configparser.RawConfigParser()
         cfg.read("/etc/samba/smb.conf")
 
         if not cfg.has_option("global", "security") or cfg.get("global", "security") != "user":
@@ -200,7 +200,7 @@ class _ServerLocal:
 
         # get interface list
         ifList = []
-        for netInfo in self.pObj.networkDict.values():
+        for netInfo in list(self.pObj.networkDict.values()):
             ifList.append(netInfo.serverPort)
 
         # generate smb.conf
@@ -236,10 +236,10 @@ class _MyUtil:
     def genShareFiles(dstDir, param, networkDict):
         # create all the share files
         sfDict = dict()
-        for nkey, netInfo in networkDict.items():
+        for nkey, netInfo in list(networkDict.items()):
             uid = nkey[0]
             nid = nkey[1]
-            for skey, value in netInfo.shareDict.items():
+            for skey, value in list(netInfo.shareDict.items()):
                 vmId = skey[0]
                 shareName = skey[1]
                 vmIp = VirtUtil.getVmIpAddress(param.ip1, uid, nid, vmId)
@@ -248,7 +248,7 @@ class _MyUtil:
                 sfDict[vmIp] += _MyUtil.genSharePart(uid, nid, vmId, vmIp, netInfo.username, netInfo.groupname,
                                                      shareName, value.srcPath, value.readonly)
                 sfDict[vmIp] += "\n"
-        for vmIp, fileBuf in sfDict.items():
+        for vmIp, fileBuf in list(sfDict.items()):
             VirtUtil.writeFile(os.path.join(dstDir, "%s.conf" % (vmIp)), fileBuf)
 
     @staticmethod
