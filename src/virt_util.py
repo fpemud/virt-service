@@ -14,6 +14,15 @@ import re
 class VirtUtil:
 
     @staticmethod
+    def allocId(dictObj, startId=1):
+        sid = startId
+        while True:
+            if sid not in dictObj:
+                return sid
+            sid = sid + 1
+            continue
+
+    @staticmethod
     def getSysctl(name):
         msg = VirtUtil.shell("/sbin/sysctl -n %s" % (name), "stdout")
         return msg.rstrip('\n')
@@ -284,24 +293,3 @@ class VirtUtil:
         inStr += "%s\n" % (password)
         inStr += "%s\n" % (password)
         VirtUtil.shellInteractive("/usr/bin/pdbedit -b tdbsam:%s -a \"%s\" -t" % (filename, username), inStr)
-
-    @staticmethod
-    def getVmMacAddress(macOuiVm, uid, nid, vmId):
-        """get mac address for virtual machine
-           this mac address is not the same as the mac address of the tap interface"""
-
-        assert (nid >= 1 and nid < 7) and vmId < 32
-        mac4 = uid / 256
-        mac5 = uid % 256
-        mac6 = nid * 32 + vmId
-        return "%s:%02x:%02x:%02x" % (macOuiVm, mac4, mac5, mac6)
-
-    @staticmethod
-    def getVmIpAddress(ip1, uid, nid, vmId):
-        """get ip address for virtual machine"""
-
-        assert (nid >= 1 and nid < 7) and vmId < 32
-        ip2 = uid / 256
-        ip3 = uid % 256
-        ip4 = nid * 32 + vmId
-        return "%d.%d.%d.%d" % (ip1, ip2, ip3, ip4)

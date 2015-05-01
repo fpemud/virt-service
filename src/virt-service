@@ -5,28 +5,32 @@ import os
 import shutil
 from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
+from virt_util import VirtUtil
 from virt_param import VirtParam
 from virt_dbus import DbusMainObject
 from virt_host_network import VirtHostNetwork
+from virt_network import VirtNetworkManager
 from virt_vfiodev_manager import VirtVfioDeviceManager
+from virt_dhcp_server import VirtDhcpServer
+from virt_samba_server import VirtSambaServer
 
 
 param = VirtParam()
 dbusMainObject = None
 try:
     # create temp directory
-    param.tmpDir = "/tmp/virt-service"
-    os.mkdir(param.tmpDir)
+    VirtUtil.mkDirAndClear(param.tmpDir)
 
     # create main loop
     DBusGMainLoop(set_as_default=True)
     param.mainloop = GLib.MainLoop()
 
-    # create network manager of host machine
+    # create management object
     param.hostNetwork = VirtHostNetwork()
-
-    # create VFIO device manager
+    param.netManager = VirtNetworkManager(param)
     param.vfioDevManager = VirtVfioDeviceManager()
+    param.dhcpServer = VirtDhcpServer(param)
+    param.sambaServer = VirtSambaServer(param)
 
     # create dbus root object
     dbusMainObject = DbusMainObject(param)

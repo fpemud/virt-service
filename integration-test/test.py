@@ -8,173 +8,78 @@ import subprocess
 import unittest
 
 
-class Test_Root_NetworkBridge(unittest.TestCase):
+class Test_ResSet_Basic(unittest.TestCase):
 
     def setUp(self):
         self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
         self.uid = os.getuid()
 
     def runTest(self):
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-        self.assertFalse(_intfExists("vnb%d" % (self.uid)))
+        sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
+        dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
 
-        netId = self.dbusObj.NewNetwork("bridge", dbus_interface='org.fpemud.VirtService')
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
-        self.assertTrue(_intfExists("vnb%d" % (self.uid)))
-
-        self.dbusObj.DeleteNetwork(netId, dbus_interface='org.fpemud.VirtService')
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-        self.assertFalse(_intfExists("vnb%d" % (self.uid)))
+        self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
 
     def tearDown(self):
         pass
 
 
-class Test_Root_NetworkNat(unittest.TestCase):
+class Test_ResSet_TapIntfNat(unittest.TestCase):
 
     def setUp(self):
         self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
         self.uid = os.getuid()
 
     def runTest(self):
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-        self.assertFalse(_intfExists("vnn%d" % (self.uid)))
+        sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
+        obj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
 
-        netId = self.dbusObj.NewNetwork("nat", dbus_interface='org.fpemud.VirtService')
+        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
+        self.assertFalse(_intfExists("vnb1"))
+
+        obj.AddTapIntf("nat")
+
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
-        self.assertTrue(_intfExists("vnn%d" % (self.uid)))
+        self.assertTrue(_intfExists("vnb1"))
+        self.assertTrue(_intfExists("vnb1.1"))
 
-        self.dbusObj.DeleteNetwork(netId, dbus_interface='org.fpemud.VirtService')
+        obj.RemoveTapIntf()
+
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-        self.assertFalse(_intfExists("vnn%d" % (self.uid)))
+        self.assertFalse(_intfExists("vnb1"))
+        self.assertFalse(_intfExists("vnb1.1"))
+
+        self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
 
     def tearDown(self):
         pass
 
 
-class Test_Root_NetworkRoute(unittest.TestCase):
+class Test_Vm_Basic(unittest.TestCase):
 
     def setUp(self):
         self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
         self.uid = os.getuid()
 
     def runTest(self):
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-        self.assertFalse(_intfExists("vnr%d" % (self.uid)))
+        sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
+        dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
 
-        netId = self.dbusObj.NewNetwork("route", dbus_interface='org.fpemud.VirtService')
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
-        self.assertTrue(_intfExists("vnr%d" % (self.uid)))
+        vmid = self.dbusObj.AttachVm("abc", sid, dbus_interface='org.fpemud.VirtService')
+        dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VirtMachines/%d' % (self.uid, vmid))
 
-        self.dbusObj.DeleteNetwork(netId, dbus_interface='org.fpemud.VirtService')
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-        self.assertFalse(_intfExists("vnr%d" % (self.uid)))
+        self.dbusObj.DetachVm(vmid, dbus_interface='org.fpemud.VirtService')
+        self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
 
     def tearDown(self):
         pass
-
-
-class Test_Root_NetworkIsolate(unittest.TestCase):
-
-    def setUp(self):
-        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
-        self.uid = os.getuid()
-
-    def runTest(self):
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-
-        netId = self.dbusObj.NewNetwork("isolate", dbus_interface='org.fpemud.VirtService')
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
-
-        self.dbusObj.DeleteNetwork(netId, dbus_interface='org.fpemud.VirtService')
-        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
-
-    def tearDown(self):
-        pass
-
-
-class Test_Network_BridgeVm(unittest.TestCase):
-
-    def setUp(self):
-        self.uid = os.getuid()
-        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
-        self.netId = self.dbusObj.NewNetwork("bridge", dbus_interface='org.fpemud.VirtService')
-        self.netObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/Networks/%d' % (self.uid, self.netId))
-
-    def runTest(self):
-        subIntfSet1 = _getSubIntfSet("vnb%d" % (self.uid))
-
-        vmId = self.netObj.AddVm("_test_", dbus_interface='org.fpemud.VirtService.Network')
-        subIntfSet2 = _getSubIntfSet("vnb%d" % (self.uid))
-        self.assertTrue(len(subIntfSet2) - len(subIntfSet1) == 1)
-
-        self.netObj.DeleteVm(vmId, dbus_interface='org.fpemud.VirtService.Network')
-        subIntfSet3 = _getSubIntfSet("vnb%d" % (self.uid))
-        self.assertEqual(subIntfSet1, subIntfSet3)
-
-    def tearDown(self):
-        self.dbusObj.DeleteNetwork(self.netId, dbus_interface='org.fpemud.VirtService')
-
-
-class Test_Network_NatVm(unittest.TestCase):
-
-    def setUp(self):
-        self.uid = os.getuid()
-        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
-        self.netId = self.dbusObj.NewNetwork("nat", dbus_interface='org.fpemud.VirtService')
-        self.netObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/Networks/%d' % (self.uid, self.netId))
-
-    def runTest(self):
-        subIntfSet1 = _getSubIntfSet("vnn%d" % (self.uid))
-
-        vmId = self.netObj.AddVm("_test_", dbus_interface='org.fpemud.VirtService.Network')
-        subIntfSet2 = _getSubIntfSet("vnn%d" % (self.uid))
-        self.assertTrue(len(subIntfSet2) - len(subIntfSet1) == 1)
-
-        ret = _testWebsite(list(subIntfSet2 - subIntfSet1)[0], "www.baidu.com")
-        self.assertTrue(ret)
-
-        self.netObj.DeleteVm(vmId, dbus_interface='org.fpemud.VirtService.Network')
-        subIntfSet3 = _getSubIntfSet("vnn%d" % (self.uid))
-        self.assertEqual(subIntfSet1, subIntfSet3)
-
-    def tearDown(self):
-        self.dbusObj.DeleteNetwork(self.netId, dbus_interface='org.fpemud.VirtService')
-
-
-class Test_Network_IsolateVm(unittest.TestCase):
-
-    def setUp(self):
-        self.uid = os.getuid()
-        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
-        self.netId = self.dbusObj.NewNetwork("isolate", dbus_interface='org.fpemud.VirtService')
-        self.netObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/Networks/%d' % (self.uid, self.netId))
-
-    def runTest(self):
-        subIntfSet1 = _getSubIntfSet("vni%d" % (self.uid))
-
-        vmId = self.netObj.AddVm("_test_", dbus_interface='org.fpemud.VirtService.Network')
-        subIntfSet2 = _getSubIntfSet("vni%d" % (self.uid))
-        self.assertTrue(len(subIntfSet2) - len(subIntfSet1) == 1)
-
-        self.netObj.DeleteVm(vmId, dbus_interface='org.fpemud.VirtService.Network')
-        subIntfSet3 = _getSubIntfSet("vni%d" % (self.uid))
-        self.assertEqual(subIntfSet1, subIntfSet3)
-
-    def tearDown(self):
-        self.dbusObj.DeleteNetwork(self.netId, dbus_interface='org.fpemud.VirtService')
 
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(Test_Root_NetworkBridge())
-    suite.addTest(Test_Root_NetworkNat())
-#    suite.addTest(Test_Root_NetworkRoute())
-    suite.addTest(Test_Root_NetworkIsolate())
-    suite.addTest(Test_Network_BridgeVm())
-    suite.addTest(Test_Network_NatVm())
-#    suite.addTest(Test_Network_RouteVm())
-    suite.addTest(Test_Network_IsolateVm())
+    suite.addTest(Test_ResSet_Basic())
+    suite.addTest(Test_ResSet_TapIntfNat())
+    suite.addTest(Test_Vm_Basic())
     return suite
 
 

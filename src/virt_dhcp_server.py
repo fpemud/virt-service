@@ -2,7 +2,6 @@
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
-import shutil
 import subprocess
 from virt_util import VirtUtil
 
@@ -21,30 +20,18 @@ class VirtDhcpServer:
     def release(self):
         assert len(self.networkDict) == 0
 
-    def addNetwork(self, uid, nid, serverPort, serverIp, netip, netmask):
+    def addNetwork(self, nid, serverPort, serverIp, netip, netmask):
         assert netip.endswith(".0")
         assert netmask == "255.255.255.0"
         assert serverIp.endswith(".1")
 
-        # add network info
-        key = (uid, nid)
-        value = _NetworkInfo(serverPort, serverIp, netip, netmask)
-        self.networkDict[key] = value
+        self.networkDict[nid] = _NetworkInfo(serverPort, serverIp, netip, netmask)
+        self.serverObjDict[nid] = _ServerLocal(self, nid)
 
-        # create server object
-        key = (uid, nid)
-        severObj = _ServerLocal(self, uid, nid)
-        self.serverObjDict[key] = severObj
-
-    def removeNetwork(self, uid, nid):
-        # remove server object
-        key = (uid, nid)
-        serverObj = self.serverObjDict.pop(key)
+    def removeNetwork(self, nid):
+        serverObj = self.serverObjDict.pop(nid)
         serverObj.release()
-
-        # remove network info
-        key = (uid, nid)
-        self.networkDict.pop(key)
+        self.networkDict.pop(nid)
 
 
 class _NetworkInfo:
@@ -58,54 +45,42 @@ class _NetworkInfo:
 
 class _ServerLocal:
 
-    def __init__(self, pObj, uid, nid):
+    def __init__(self, pObj, nid):
         self.param = pObj.param
-        self.pObj = pObj        # parent object
-        self.uid = uid
         self.nid = nid
+        self.netInfo = pObj.networkDict[self.nid]
 
-        self.servDir = os.path.join(self.param.tmpDir, str(self.uid), str(self.nid), "dnsmasq")
-        self.confFile = os.path.join(self.servDir, "dnsmasq.conf")
+        self.confFile = os.path.join(self.param.netManager.nidGetTmpDir(self.nid), "dnsmasq.conf")
         self.serverProc = None
 
-        try:
-            os.mkdir(self.servDir)
-            self._genDnsmasqCfgFile()
-            self.serverProc = subprocess.Popen(self._genDnsmasqCommand(), shell=True)
-        except:
-            shutil.rmtree(self.servDir)
-            raise
+        self._genDnsmasqCfgFile()
+        self.serverProc = subprocess.Popen(self._genDnsmasqCommand(), shell=True)
 
     def release(self):
         self.serverProc.terminate()
         self.serverProc.wait()
         self.serverProc = None
-        shutil.rmtree(self.servDir)
 
     def _genDnsmasqCfgFile(self):
-
-        key = (self.uid, self.nid)
-        netInfo = self.pObj.networkDict[key]
 
         buf = ""
         buf += "strict-order\n"
         buf += "bind-interfaces\n"
         buf += "except-interface=lo\n"                        # don't listen on 127.0.0.1
-        buf += "interface=%s\n" % (netInfo.serverPort)
-        buf += "listen-address=%s\n" % (netInfo.serverIp)
-        buf += "dhcp-range=%s,static,%s\n" % (netInfo.netip, netInfo.netmask)
-        for vmId in range(0, 32):
-            macaddr = VirtUtil.getVmMacAddress(self.param.macOuiVm, self.uid, self.nid, vmId)
-            ipaddr = VirtUtil.getVmIpAddress(self.param.ip1, self.uid, self.nid, vmId)
+        buf += "interface=%s\n" % (self.netInfo.serverPort)
+        buf += "listen-address=%s\n" % (self.netInfo.serverIp)
+        buf += "dhcp-range=%s,static,%s\n" % (self.netInfo.netip, self.netInfo.netmask)
+        for sid in range(1, 128 + 1):
+            macaddr = self.param.netManager.nidGetVmMac(self.nid, sid)
+            ipaddr = self.param.netManager.nidGetVmIp(self.nid, sid)
             buf += "dhcp-host=%s,%s\n" % (macaddr, ipaddr)
 
         VirtUtil.writeFile(self.confFile, buf)
 
     def _genDnsmasqCommand(self):
-
         # no pid-file, no lease-file
         # dnsmasq polls /etc/resolv.conf to get the dns change, it's good :)
-        cmd = "/sbin/dnsmasq"
+        cmd = "/usr/sbin/dnsmasq"
         cmd += " --keep-in-foreground"                        # don't run as daemon, so we can control it
         cmd += " --conf-file=\"%s\"" % (self.confFile)
         cmd += " --pid-file"

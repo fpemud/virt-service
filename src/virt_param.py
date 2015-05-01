@@ -1,6 +1,8 @@
 #!/usr/bin/python2
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
+import tempfile
+
 
 class VirtParam:
 
@@ -13,10 +15,13 @@ class VirtParam:
                            |----smb.log         samba log file"""
 
     def __init__(self):
+        self.tmpDir = tempfile.mkdtemp(prefix="virt-service.")
+
+        self.ctrlPort = 2207
+
         self.mainloop = None
         self.hostNetwork = None
+        self.netManager = None
         self.vfioDevManager = None
-        self.tmpDir = None
-        self.macOuiVm = "00:50:01"
-        self.ip1 = 10
-        self.ctrlPort = 2207
+        self.dhcpServer = None
+        self.sambaServer = None
