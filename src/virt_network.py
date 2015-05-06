@@ -4,6 +4,7 @@
 import os
 import re
 from virt_util import VirtUtil
+from virt_param import VirtInitializationError
 from virt_host_network import VirtHostNetworkEventCallback
 
 
@@ -15,6 +16,15 @@ class VirtNetworkManager:
         self.ip1 = 10
         self.minIpNumber = 11       # IP X.X.X.0 ~ X.X.X.10 are reserved
         self.netDict = dict()       # { userId: { netName: netObj, netName2: netObj2, ... }, userId2: { ... }, ... }
+
+        if not os.path.exists("/sbin/brctl"):
+            raise VirtInitializationError("/sbin/brctl not found")
+        if not os.path.exists("/bin/ifconfig"):
+            raise VirtInitializationError("/bin/ifconfig not found")
+        if not os.path.exists("/bin/ip"):
+            raise VirtInitializationError("/bin/ip not found")
+        if not os.path.exists("/sbin/nft"):
+            raise VirtInitializationError("/sbin/nft not found")
 
     def release(self):
         assert len(self.netDict) == 0

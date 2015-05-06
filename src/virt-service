@@ -7,6 +7,7 @@ from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 from virt_util import VirtUtil
 from virt_param import VirtParam
+from virt_param import VirtInitializationError
 from virt_dbus import DbusMainObject
 from virt_host_network import VirtHostNetwork
 from virt_network import VirtNetworkManager
@@ -18,19 +19,22 @@ from virt_samba_server import VirtSambaServer
 param = VirtParam()
 dbusMainObject = None
 try:
-    # create temp directory
-    VirtUtil.mkDirAndClear(param.tmpDir)
-
     # create main loop
     DBusGMainLoop(set_as_default=True)
     param.mainloop = GLib.MainLoop()
 
-    # create management object
-    param.hostNetwork = VirtHostNetwork()
-    param.netManager = VirtNetworkManager(param)
-    param.vfioDevManager = VirtVfioDeviceManager()
-    param.dhcpServer = VirtDhcpServer(param)
-    param.sambaServer = VirtSambaServer(param)
+    try:
+        # create temp directory
+        VirtUtil.mkDirAndClear(param.tmpDir)
+
+        # create management object
+        param.hostNetwork = VirtHostNetwork()
+        param.netManager = VirtNetworkManager(param)
+        param.vfioDevManager = VirtVfioDeviceManager()
+        param.dhcpServer = VirtDhcpServer(param)
+        param.sambaServer = VirtSambaServer(param)
+    except VirtInitializationError as e:
+        param.initError = e.message
 
     # create dbus root object
     dbusMainObject = DbusMainObject(param)
@@ -40,5 +44,5 @@ try:
 finally:
     if dbusMainObject is not None:
         dbusMainObject.release()
-    if param.tmpDir is not None and os.path.exists(param.tmpDir):
+    if os.path.exists(param.tmpDir):
         shutil.rmtree(param.tmpDir)

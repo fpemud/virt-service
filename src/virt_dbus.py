@@ -41,10 +41,10 @@ from virt_util import VirtUtil
 #
 #   void                               AddTapIntf(networkName:string)
 #   void                               RemoveTapIntf()
-#   devId:int                          AddVfioDevice(devName:string, vfioType:string)
-#   void                               RemoveDevice(devId:int)
 #   sambaShareId:int                   NewSambaShare(shareName:string, srcPath:string, readonly:boolean)
 #   void                               DeleteSambaShare(sambaShareId:int)
+#   devId:int                          AddVfioDevice(devName:string, vfioType:string)
+#   void                               RemoveDevice(devId:int)
 #
 # Notes:
 #   networkName can be: bridge, nat, route, isolate
@@ -112,6 +112,9 @@ class DbusMainObject(dbus.service.Object):
     def NewVmResSet(self, sender=None):
         uid = VirtUtil.dbusGetUserId(self.connection, sender)
 
+        if self.param.initError is not None:
+            raise VirtServiceException("virt-service initialization failed, %s" % (self.param.initError))
+
         # create new resource set object
         try:
             if uid not in self.resSetDict:
@@ -132,6 +135,9 @@ class DbusMainObject(dbus.service.Object):
     def DeleteVmResSet(self, sid, sender=None):
         uid = VirtUtil.dbusGetUserId(self.connection, sender)
 
+        if self.param.initError is not None:
+            raise VirtServiceException("virt-service initialization failed, %s" % (self.param.initError))
+
         resset = self._resSetGet(uid, sid)
         if resset is None:
             raise VirtServiceException("virt-machine resource set not found")
@@ -145,6 +151,9 @@ class DbusMainObject(dbus.service.Object):
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', in_signature='si', out_signature='i')
     def AttachVm(self, vmname, sid, sender=None):
         uid = VirtUtil.dbusGetUserId(self.connection, sender)
+
+        if self.param.initError is not None:
+            raise VirtServiceException("virt-service initialization failed, %s" % (self.param.initError))
 
         resset = self._resSetGet(uid, sid)
         if resset is None:
@@ -169,6 +178,9 @@ class DbusMainObject(dbus.service.Object):
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', in_signature='i')
     def DetachVm(self, vmid, sender=None):
         uid = VirtUtil.dbusGetUserId(self.connection, sender)
+
+        if self.param.initError is not None:
+            raise VirtServiceException("virt-service initialization failed, %s" % (self.param.initError))
 
         vm = self._vmGet(uid, vmid)
         if vm is None:
@@ -260,6 +272,14 @@ class DbusResSetObject(dbus.service.Object):
         self.param.netManager.removeTapIntf(self.uid, self.networkName, self.sid)
         self.param.netManager.removeNetwork(self.uid, self.networkName)
         self.networkName = None
+
+    @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='ssb', out_signature='i')
+    def NewSambaShare(self, shareName, srcPath, readonly, sender):
+        pass
+
+    @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='i')
+    def DeleteSambaShare(self, shareId, sender):
+        pass
 
 
 class DbusVmObject(dbus.service.Object):

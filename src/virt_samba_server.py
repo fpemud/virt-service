@@ -10,6 +10,7 @@ import signal
 import subprocess
 import configparser
 from virt_util import VirtUtil
+from virt_param import VirtInitializationError
 
 
 class VirtSambaServer:
@@ -20,31 +21,64 @@ class VirtSambaServer:
     def __init__(self, param):
         self.param = param
         self.networkDict = dict()
+        self.globalOrLocal = (VirtUtil.getPidBySocket("0.0.0.0:139") != -1)
         self.serverObj = None
+
+        if self.globalOrLocal:
+            cfg = configparser.RawConfigParser()
+            cfg.read("/etc/samba/smb.conf")
+
+            if not cfg.has_option("global", "security") or cfg.get("global", "security") != "user":
+                raise VirtInitializationError("option \"global/security\" of main samba server must have value \"user\"")
+
+            if cfg.has_option("global", "passdb backend") and cfg.get("global", "passdb backend") != "tdbsam":
+                raise VirtInitializationError("option \"global/passdb backend\" of main samba server must have value \"tdbsam\"")
+
+            if cfg.has_option("global", "workgroup") and cfg.get("global", "workgroup") != "WORKGROUP":
+                raise VirtInitializationError("option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
+
+            if not os.path.isdir("/etc/samba/hosts.d"):
+                raise VirtInitializationError("per-host configuration directory (/etc/samba/hosts.d) does not exist")
+            if cfg.has_option("global", "include") and cfg.get("global", "include") != "/etc/samba/hosts.d/%I.conf":
+                raise VirtInitializationError("option \"global/include\" of main samba server must have value \"/etc/samba/hosts.d/%I.conf\"")
+
+            if not cfg.has_option("global", "usershare path"):
+                raise VirtInitializationError("option \"global/security\" must exist")
+            if not cfg.has_option("global", "usershare max shares"):
+                raise VirtInitializationError("option \"global/usershare max shares\" must exist")
+
+            ret = VirtUtil.shell("/usr/bin/pdbedit -L", "stdout")
+            m = re.search("^nobody:[0-9]+:.*$", ret, re.MULTILINE)
+            if m is None:
+                raise VirtInitializationError("main samba server must have user \"nobody\"")
+
+            uspath = cfg.get("global", "usershare path")
+            if not os.path.isdir(uspath):
+                raise VirtInitializationError("%s (samba usershare path) must be a directory" % (uspath))
+            if grp.getgrgid(os.stat(uspath).st_gid)[0] != "users":
+                raise VirtInitializationError("%s (samba usershare path) must be owned by group \"users\"" % (uspath))
+            if os.stat(uspath).st_mode != 17400:
+                raise VirtInitializationError("%s (samba usershare path) must has mode \"1770\"" % (uspath))
 
     def release(self):
         assert len(self.networkDict) == 0
 
-    def addNetwork(self, uid, nid, serverPort):
-        key = (uid, nid)
-        value = _NetworkInfo(uid, serverPort)
-        self.networkDict[key] = value
+    def addNetwork(self, nid, uid, serverPort, serverIp, netip, netmask):
+        self.networkDict[nid] = _NetworkInfo(uid, serverPort)
 
-    def removeNetwork(self, uid, nid):
-        key = (uid, nid)
-        assert len(self.networkDict[key].shareDict) == 0
-        del self.networkDict[key]
+    def removeNetwork(self, nid):
+        assert len(self.networkDict[nid].shareDict) == 0
+        del self.networkDict[nid]
 
-    def networkGetAccountInfo(self, uid, nid):
+    def networkGetAccountInfo(self, nid):
         """return (username, password)"""
         return ("guest", "")
 
-    def networkAddShare(self, uid, nid, vmId, shareName, srcPath, readonly):
+    def networkAddShare(self, nid, vmId, shareName, srcPath, readonly):
         assert "_" not in shareName
 
         # get _NetworkInfo
-        key = (uid, nid)
-        netInfo = self.networkDict[key]
+        netInfo = self.networkDict[nid]
 
         # add ShareInfo
         key = (vmId, shareName)
@@ -57,11 +91,10 @@ class VirtSambaServer:
         else:
             self.serverObj.updateShare()
 
-    def networkRemoveShare(self, uid, nid, vmId, shareName):
+    def networkRemoveShare(self, nid, vmId, shareName):
 
         # get _NetworkInfo
-        key = (uid, nid)
-        netInfo = self.networkDict[key]
+        netInfo = self.networkDict[nid]
 
         # delete ShareInfo
         key = (vmId, shareName)
@@ -102,9 +135,10 @@ class VirtSambaServer:
 class _NetworkInfo:
 
     def __init__(self, uid, serverPort):
+        self.uid = uid
         self.serverPort = serverPort
-        self.username = pwd.getpwuid(uid).pw_name
-        self.groupname = grp.getgrgid(pwd.getpwuid(uid).pw_gid).gr_name
+        self.username = pwd.getpwuid(self.uid).pw_name
+        self.groupname = grp.getgrgid(pwd.getpwuid(self.uid).pw_gid).gr_name
         self.shareDict = dict()
 
 
@@ -236,16 +270,14 @@ class _MyUtil:
     def genShareFiles(dstDir, param, networkDict):
         # create all the share files
         sfDict = dict()
-        for nkey, netInfo in list(networkDict.items()):
-            uid = nkey[0]
-            nid = nkey[1]
+        for nid, netInfo in list(networkDict.items()):
             for skey, value in list(netInfo.shareDict.items()):
                 vmId = skey[0]
                 shareName = skey[1]
-                vmIp = VirtUtil.getVmIpAddress(param.ip1, uid, nid, vmId)
+                vmIp = VirtUtil.getVmIpAddress(param.ip1, netInfo.uid, nid, vmId)
                 if vmIp not in sfDict:
                     sfDict[vmIp] = ""
-                sfDict[vmIp] += _MyUtil.genSharePart(uid, nid, vmId, vmIp, netInfo.username, netInfo.groupname,
+                sfDict[vmIp] += _MyUtil.genSharePart(netInfo.uid, nid, vmId, vmIp, netInfo.username, netInfo.groupname,
                                                      shareName, value.srcPath, value.readonly)
                 sfDict[vmIp] += "\n"
         for vmIp, fileBuf in list(sfDict.items()):

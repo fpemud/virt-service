@@ -4,6 +4,7 @@
 import os
 import subprocess
 from virt_util import VirtUtil
+from virt_param import VirtInitializationError
 
 
 class VirtDhcpServer:
@@ -16,6 +17,9 @@ class VirtDhcpServer:
         self.param = param
         self.networkDict = dict()
         self.serverObjDict = dict()
+
+        if not os.path.exists("/usr/sbin/dnsmasq"):
+            raise VirtInitializationError("/usr/sbin/dnsmasq not found")
 
     def release(self):
         assert len(self.networkDict) == 0

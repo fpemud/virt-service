@@ -25,3 +25,11 @@ class VirtParam:
         self.vfioDevManager = None
         self.dhcpServer = None
         self.sambaServer = None
+
+        self.initError = None
+
+
+class VirtInitializationError(Exception):
+
+    def __init__(self, msg):
+        self.msg = msg
