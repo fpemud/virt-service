@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
-import sets
 import dbus
 
 
@@ -11,7 +10,7 @@ class VirtHostNetwork:
 
     def __init__(self):
         self.cbObjList = []              # callback objects
-        self.intfSet = sets.Set()        # active interface name list
+        self.intfSet = set()             # active interface name list
 
         # NetworkManager: register signal, fill self.intfSet
         if dbus.SystemBus().name_has_owner("org.freedesktop.NetworkManager"):
@@ -40,7 +39,7 @@ class VirtHostNetwork:
             return
 
         # get the new interface list
-        newIntfSet = sets.Set()
+        newIntfSet = set()
         for oconn in props['ActiveConnections']:
             connObj = dbus.SystemBus().get_object('org.freedesktop.NetworkManager', oconn)
             for odev in connObj.Get("org.freedesktop.NetworkManager.Connection.Active", "Devices", dbus_interface="org.freedesktop.DBus.Properties"):
