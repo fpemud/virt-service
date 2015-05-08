@@ -42,23 +42,10 @@ class VirtSambaServer:
             if cfg.has_option("global", "include") and cfg.get("global", "include") != "/etc/samba/hosts.d/%I.conf":
                 raise VirtInitializationError("option \"global/include\" of main samba server must have value \"/etc/samba/hosts.d/%I.conf\"")
 
-            if not cfg.has_option("global", "usershare path"):
-                raise VirtInitializationError("option \"global/security\" must exist")
-            if not cfg.has_option("global", "usershare max shares"):
-                raise VirtInitializationError("option \"global/usershare max shares\" must exist")
-
             ret = VirtUtil.shell("/usr/bin/pdbedit -L", "stdout")
             m = re.search("^nobody:[0-9]+:.*$", ret, re.MULTILINE)
             if m is None:
                 raise VirtInitializationError("main samba server must have user \"nobody\"")
-
-            uspath = cfg.get("global", "usershare path")
-            if not os.path.isdir(uspath):
-                raise VirtInitializationError("%s (samba usershare path) must be a directory" % (uspath))
-            if grp.getgrgid(os.stat(uspath).st_gid)[0] != "users":
-                raise VirtInitializationError("%s (samba usershare path) must be owned by group \"users\"" % (uspath))
-            if os.stat(uspath).st_mode != 17400:
-                raise VirtInitializationError("%s (samba usershare path) must has mode \"1770\"" % (uspath))
 
     def release(self):
         assert len(self.networkDict) == 0

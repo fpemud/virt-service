@@ -41,8 +41,8 @@ from virt_util import VirtUtil
 #
 #   void                               AddTapIntf(networkName:string)
 #   void                               RemoveTapIntf()
-#   sambaShareId:int                   NewSambaShare(shareName:string, srcPath:string, readonly:boolean)
-#   void                               DeleteSambaShare(sambaShareId:int)
+#   void                               NewSambaShare(shareName:string, srcPath:string, readonly:boolean)
+#   void                               DeleteSambaShare(shareName:string)
 #   devId:int                          AddVfioDevice(devName:string, vfioType:string)
 #   void                               RemoveDevice(devId:int)
 #
@@ -273,13 +273,20 @@ class DbusResSetObject(dbus.service.Object):
         self.param.netManager.removeNetwork(self.uid, self.networkName)
         self.networkName = None
 
-    @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='ssb', out_signature='i')
+    @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='ssb')
     def NewSambaShare(self, shareName, srcPath, readonly, sender):
-        pass
+        assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
+
+        if not srcPath.startswith("/"):
+            raise VirtServiceException("srcPath must be absoulte path")
+
+        self.param.sambaServer.networkAddShare(self.nid, self.vmId, self.shareName, self.srcPath, self.readonly)
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='i')
-    def DeleteSambaShare(self, shareId, sender):
-        pass
+    def DeleteSambaShare(self, shareName, sender):
+        assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
+
+        self.param.sambaServer.networkRemoveShare(self.nid, self.vmId, self.shareName)
 
 
 class DbusVmObject(dbus.service.Object):
