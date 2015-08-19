@@ -62,7 +62,7 @@ class VirtNetworkManager:
             # enable server
             if networkName in ["nat", "route"]:
                 self.param.dhcpServer.addNetwork(nobj.nid, nobj.brname, nobj.brip, nobj.netip, nobj.netmask)
-                self.param.sambaServer.addNetwork(uid, nobj.nid, nobj.brname)
+                self.param.sambaServer.addNetwork(nobj.nid, uid, nobj.brip, nobj.netip, nobj.netmask)
 
             # register host network callback
             if networkName in ["bridge", "nat", "route"]:
@@ -80,7 +80,7 @@ class VirtNetworkManager:
             if networkName in ["bridge", "nat", "route"]:
                 self.param.hostNetwork.unregisterEventCallback(nobj)
             if networkName in ["nat", "route"]:
-                self.param.sambaServer.removeNetwork(uid, nobj.nid)
+                self.param.sambaServer.removeNetwork(nobj.nid)
                 self.param.dhcpServer.removeNetwork(nobj.nid)
             nobj.release()
             del self.netDict[uid][networkName]
@@ -95,7 +95,8 @@ class VirtNetworkManager:
 
     def removeTapIntf(self, uid, networkName, sid):
         assert self._validateNetworkName(networkName) and self._validateResSetId(sid)
-        self.netDict[uid][networkName].removeTapIntf(sid)
+        if self.netDict[uid][networkName].getTapInterface(sid) is not None:
+            self.netDict[uid][networkName].removeTapIntf(sid)
 
     def hasTapIntf(self, uid, networkName, sid):
         assert self._validateNetworkName(networkName) and self._validateResSetId(sid)

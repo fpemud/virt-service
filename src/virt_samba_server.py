@@ -50,8 +50,8 @@ class VirtSambaServer:
     def release(self):
         assert len(self.networkDict) == 0
 
-    def addNetwork(self, nid, uid, serverPort, serverIp, netip, netmask):
-        self.networkDict[nid] = _NetworkInfo(uid, serverPort)
+    def addNetwork(self, nid, uid, serverIp, netip, netmask):
+        self.networkDict[nid] = _NetworkInfo(uid, -1)
 
     def removeNetwork(self, nid):
         assert len(self.networkDict[nid].shareDict) == 0
