@@ -7,7 +7,6 @@ from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 from virt_util import VirtUtil
 from virt_param import VirtParam
-from virt_param import VirtInitializationError
 from virt_dbus import DbusMainObject
 from virt_host_network import VirtHostNetwork
 from virt_network import VirtNetworkManager
@@ -33,7 +32,7 @@ try:
         param.vfioDevManager = VirtVfioDeviceManager()
         param.dhcpServer = VirtDhcpServer(param)
         param.sambaServer = VirtSambaServer(param)
-    except VirtInitializationError as e:
+    except Exception as e:
         param.initError = e.message
 
     # create dbus root object

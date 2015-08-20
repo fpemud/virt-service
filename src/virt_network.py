@@ -39,34 +39,39 @@ class VirtNetworkManager:
             # create a new network object
             if uid not in self.netDict:
                 self.netDict[uid] = dict()
-            if networkName == "bridge":
-                nobj = _NetworkBridge(self._allocId())
-            elif networkName == "nat":
-                nobj = _NetworkNat(self._allocId())
-            elif networkName == "route":
-                nobj = _NetworkRoute(self._allocId())
-            elif networkName == "isolate":
-                nobj = _NetworkIsolate(self._allocId())
-            else:
-                assert False
-            nobj.refcount += 1
-            self.netDict[uid][networkName] = nobj
+            try:
+                if networkName == "bridge":
+                    nobj = _NetworkBridge(self._allocId())
+                elif networkName == "nat":
+                    nobj = _NetworkNat(self._allocId())
+                elif networkName == "route":
+                    nobj = _NetworkRoute(self._allocId())
+                elif networkName == "isolate":
+                    nobj = _NetworkIsolate(self._allocId())
+                else:
+                    assert False
+                nobj.refcount += 1
+                self.netDict[uid][networkName] = nobj
 
-            # open ipv4 forwarding, now no other program needs it, so we do a simple implementation
-            VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "1")
+                # open ipv4 forwarding, now no other program needs it, so we do a simple implementation
+                VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "1")
 
-            # create network temp directory
-            if not os.path.exists(os.path.join(self.param.tmpDir, str(nobj.nid))):
-                os.makedirs(os.path.join(self.param.tmpDir, str(nobj.nid)))
+                # create network temp directory
+                if not os.path.exists(os.path.join(self.param.tmpDir, str(nobj.nid))):
+                    os.makedirs(os.path.join(self.param.tmpDir, str(nobj.nid)))
 
-            # enable server
-            if networkName in ["nat", "route"]:
-                self.param.dhcpServer.addNetwork(nobj.nid, nobj.brname, nobj.brip, nobj.netip, nobj.netmask)
-                self.param.sambaServer.addNetwork(nobj.nid, uid, nobj.brip, nobj.netip, nobj.netmask)
+                # enable server
+                if networkName in ["nat", "route"]:
+                    self.param.dhcpServer.addNetwork(nobj.nid, nobj.brname, nobj.brip, nobj.netip, nobj.netmask)
+                    self.param.sambaServer.addNetwork(nobj.nid, uid, nobj.brip, nobj.netip, nobj.netmask)
 
-            # register host network callback
-            if networkName in ["bridge", "nat", "route"]:
-                self.param.hostNetwork.registerEventCallback(nobj)
+                # register host network callback
+                if networkName in ["bridge", "nat", "route"]:
+                    self.param.hostNetwork.registerEventCallback(nobj)
+            except:
+                if len(self.netDict[uid]) == 0:
+                    del self.netDict[uid]
+                raise
 
     def removeNetwork(self, uid, networkName):
         assert self._validateNetworkName(networkName)
