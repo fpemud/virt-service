@@ -34,6 +34,7 @@ try:
         param.sambaServer = VirtSambaServer(param)
     except Exception as e:
         param.initError = e.message
+        GLib.timeout_add_seconds(1, lambda *args: param.mainloop.quit())
 
     # create dbus root object
     dbusMainObject = DbusMainObject(param)
