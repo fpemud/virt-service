@@ -98,6 +98,24 @@ class VirtUtil:
         os.symlink(source, link_name)
 
     @staticmethod
+    def isSocketPortUsed(portType, port):
+        if portType == "tcp":
+            sType = socket.SOCK_STREAM
+        elif portType == "udp":
+            sType = socket.SOCK_DGRAM
+        else:
+            assert False
+
+        s = socket.socket(socket.AF_INET, sType)
+        try:
+            s.bind((('', port)))
+            return False
+        except socket.error:
+            return True
+        finally:
+            s.close()
+
+    @staticmethod
     def getFreeSocketPort(portType, portStart, portEnd):
         if portType == "tcp":
             sType = socket.SOCK_STREAM

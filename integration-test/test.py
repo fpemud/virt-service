@@ -75,11 +75,46 @@ class Test_Vm_Basic(unittest.TestCase):
         pass
 
 
+class Test_ResSet_SambaShare(unittest.TestCase):
+
+    def setUp(self):
+        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
+        self.uid = os.getuid()
+
+    def runTest(self):
+        sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
+        obj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
+        obj.AddTapIntf("nat")
+
+        obj.NewSambaShare("abc", os.getcwd(), True)
+        self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
+        self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+
+        obj.NewSambaShare("abc2", os.getcwd(), True)
+        self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+        self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+
+        obj.DeleteSambaShare("abc")
+        self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
+        self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+        self.assertFalse("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+
+        obj.DeleteSambaShare("abc2")
+        self.assertTrue(len(os.listdir("/etc/samba/hosts.d")) == 0)
+
+        obj.RemoveTapIntf()
+        self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
+
+    def tearDown(self):
+        pass
+
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(Test_ResSet_Basic())
     suite.addTest(Test_ResSet_TapIntfNat())
     suite.addTest(Test_Vm_Basic())
+    suite.addTest(Test_ResSet_SambaShare())
     return suite
 
 

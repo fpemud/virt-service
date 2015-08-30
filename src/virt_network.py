@@ -12,9 +12,6 @@ class VirtNetworkManager:
 
     def __init__(self, param):
         self.param = param
-        self.macOui = "00:50:01"
-        self.ip1 = 10
-        self.minIpNumber = 11       # IP X.X.X.0 ~ X.X.X.10 are reserved
         self.netDict = dict()       # { userId: { netName: netObj, netName2: netObj2, ... }, userId2: { ... }, ... }
 
         if not os.path.exists("/sbin/brctl"):
@@ -30,7 +27,7 @@ class VirtNetworkManager:
         assert len(self.netDict) == 0
 
     def addNetwork(self, uid, networkName):
-        assert self._validateNetworkName(networkName)
+        assert _validateNetworkName(networkName)
 
         if uid in self.netDict and networkName in self.netDict[uid]:
             # network object already exists, add reference count
@@ -41,40 +38,27 @@ class VirtNetworkManager:
                 self.netDict[uid] = dict()
             try:
                 if networkName == "bridge":
-                    nobj = _NetworkBridge(self._allocId())
+                    nobj = _NetworkBridge(self.param, uid, self._allocId())
                 elif networkName == "nat":
-                    nobj = _NetworkNat(self._allocId())
+                    nobj = _NetworkNat(self.param, uid, self._allocId())
                 elif networkName == "route":
-                    nobj = _NetworkRoute(self._allocId())
+                    nobj = _NetworkRoute(self.param, uid, self._allocId())
                 elif networkName == "isolate":
-                    nobj = _NetworkIsolate(self._allocId())
+                    nobj = _NetworkIsolate(self.param, uid, self._allocId())
                 else:
                     assert False
                 nobj.refcount += 1
                 self.netDict[uid][networkName] = nobj
 
-                # open ipv4 forwarding, now no other program needs it, so we do a simple implementation
+                # open ipv4 forwarding, currently no other program needs it, so we do a simple implementation
                 VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "1")
-
-                # create network temp directory
-                if not os.path.exists(os.path.join(self.param.tmpDir, str(nobj.nid))):
-                    os.makedirs(os.path.join(self.param.tmpDir, str(nobj.nid)))
-
-                # enable server
-                if networkName in ["nat", "route"]:
-                    self.param.dhcpServer.addNetwork(nobj.nid, nobj.brname, nobj.brip, nobj.netip, nobj.netmask)
-                    self.param.sambaServer.addNetwork(nobj.nid, uid, nobj.brip, nobj.netip, nobj.netmask)
-
-                # register host network callback
-                if networkName in ["bridge", "nat", "route"]:
-                    self.param.hostNetwork.registerEventCallback(nobj)
             except:
                 if len(self.netDict[uid]) == 0:
                     del self.netDict[uid]
                 raise
 
     def removeNetwork(self, uid, networkName):
-        assert self._validateNetworkName(networkName)
+        assert _validateNetworkName(networkName)
 
         if uid not in self.netDict or networkName not in self.netDict[uid]:
             return
@@ -82,11 +66,6 @@ class VirtNetworkManager:
         nobj = self.netDict[uid][networkName]
         nobj.refcount -= 1
         if nobj.refcount == 0:
-            if networkName in ["bridge", "nat", "route"]:
-                self.param.hostNetwork.unregisterEventCallback(nobj)
-            if networkName in ["nat", "route"]:
-                self.param.sambaServer.removeNetwork(nobj.nid)
-                self.param.dhcpServer.removeNetwork(nobj.nid)
             nobj.release()
             del self.netDict[uid][networkName]
             if len(self.netDict[uid]) == 0:
@@ -95,50 +74,33 @@ class VirtNetworkManager:
                 VirtUtil.writeFile("/proc/sys/net/ipv4/ip_forward", "0")
 
     def addTapIntf(self, uid, networkName, sid):
-        assert self._validateNetworkName(networkName) and self._validateResSetId(sid)
+        assert _validateNetworkName(networkName) and _validateResSetId(sid)
         self.netDict[uid][networkName].addTapIntf(sid)
 
     def removeTapIntf(self, uid, networkName, sid):
-        assert self._validateNetworkName(networkName) and self._validateResSetId(sid)
+        assert _validateNetworkName(networkName) and _validateResSetId(sid)
         if self.netDict[uid][networkName].getTapInterface(sid) is not None:
             self.netDict[uid][networkName].removeTapIntf(sid)
 
     def hasTapIntf(self, uid, networkName, sid):
-        assert self._validateNetworkName(networkName) and self._validateResSetId(sid)
+        assert _validateNetworkName(networkName) and _validateResSetId(sid)
         if uid not in self.netDict or networkName not in self.netDict[uid]:
             return False
         return self.netDict[uid][networkName].getTapInterface(sid) is not None
 
     def getTapIntf(self, uid, networkName, sid):
-        assert self._validateNetworkName(networkName) and self._validateResSetId(sid)
+        assert _validateNetworkName(networkName) and _validateResSetId(sid)
         ret = self.netDict[uid][networkName].getTapInterface(sid)
         assert ret is not None
         return ret
 
     def getVmIp(self, uid, networkName, sid):
-        assert self._validateNetworkName(networkName)
-        return self.nidGetVmIp(self.netDict[uid][networkName].nid, sid)
+        assert _validateNetworkName(networkName)
+        return self.netDict[uid][networkName].getVmIp(sid)
 
     def getVmMac(self, uid, networkName, sid):
-        assert self._validateNetworkName(networkName)
-        return self.nidGetVmMac(self.netDict[uid][networkName].nid, sid)
-
-    def nidGetTmpDir(self, nid):
-        return os.path.join(self.param.tmpDir, str(nid))
-
-    def nidGetVmIp(self, nid, sid):
-        assert self._validateResSetId(sid)
-        return "%d.%d.%d.%d" % (self.ip1, nid / 256, nid % 256, self.minIpNumber + sid)
-
-    def nidGetVmMac(self, nid, sid):
-        assert self._validateResSetId(sid)
-        return "%s:%02x:%02x:%02x" % (self.macOui, nid / 256, nid % 256, self.minIpNumber + sid)
-
-    def _validateNetworkName(self, networkName):
-        return networkName in ["bridge", "nat", "route", "isolate"]
-
-    def _validateResSetId(self, sid):
-        return 1 <= sid <= 128
+        assert _validateNetworkName(networkName)
+        return self.netDict[uid][networkName].getVmMac(sid)
 
     def _allocId(self):
         for nid in range(1, 256 * 256):
@@ -155,20 +117,50 @@ class VirtNetworkManager:
         assert False
 
 
-class _NetworkBridge(VirtHostNetworkEventCallback):
+class _NetworkBase:
 
-    def __init__(self, nid):
+    def __init__(self, param, uid, nid):
+        self.macOui = "00:50:01"
+        self.ip1 = 10
+        self.minIpNumber = 11       # IP X.X.X.0 ~ X.X.X.10 are reserved
+
+        self.param = param
+        self.uid = uid
         self.nid = nid
         self.refcount = 0
+
+        # create network temp directory
+        if not os.path.exists(os.path.join(self.param.tmpDir, str(self.nid))):
+            os.makedirs(os.path.join(self.param.tmpDir, str(self.nid)))
+
+    def getTmpDir(self):
+        return os.path.join(self.param.tmpDir, str(self.nid))
+
+    def getVmIp(self, sid):
+        assert _validateResSetId(sid)
+        return "%d.%d.%d.%d" % (self.ip1, self.nid / 256, self.nid % 256, self.minIpNumber + sid)
+
+    def getVmMac(self, sid):
+        assert _validateResSetId(sid)
+        return "%s:%02x:%02x:%02x" % (self.macOui, self.nid / 256, self.nid % 256, self.minIpNumber + sid)
+
+
+class _NetworkBridge(_NetworkBase, VirtHostNetworkEventCallback):
+
+    def __init__(self, param, uid, nid):
+        super(_NetworkBridge, self).__init__(param, uid, nid)
+
         self.brname = "vnb%d" % (self.nid)
         self.mainIntfList = []
         self.tapDict = dict()
 
         VirtUtil.shell('/sbin/brctl addbr "%s"' % (self.brname))
         VirtUtil.shell('/bin/ifconfig "%s" up' % (self.brname))
+        self.param.hostNetwork.registerEventCallback(self)
 
     def release(self):
         assert len(self.tapDict) == 0
+        self.param.hostNetwork.unregisterEventCallback(self)
         VirtUtil.shell('/bin/ifconfig "%s" down' % (self.brname))
         VirtUtil.shell('/sbin/brctl delbr "%s"' % (self.brname))
 
@@ -206,11 +198,11 @@ class _NetworkBridge(VirtHostNetworkEventCallback):
         return self.tapDict.get(sid, None)
 
 
-class _NetworkNat(VirtHostNetworkEventCallback):
+class _NetworkNat(_NetworkBase, VirtHostNetworkEventCallback):
 
-    def __init__(self, nid):
-        self.nid = nid
-        self.refcount = 0
+    def __init__(self, param, uid, nid):
+        super(_NetworkNat, self).__init__(param, uid, nid)
+
         self.netip = "10.%d.%d.0" % (self.nid / 256, self.nid % 256)
         self.netmask = "255.255.255.0"
 
@@ -227,8 +219,16 @@ class _NetworkNat(VirtHostNetworkEventCallback):
         VirtUtil.shell('/bin/ifconfig "%s" up' % (self.brname))
         self._addNftNatRule(self.netip, self.netmask)
 
+        self.param.dhcpServer.startOnNetwork(self)
+        self.param.sambaServer.startOnNetwork(uid, self)
+        self.param.hostNetwork.registerEventCallback(self)
+
     def release(self):
         assert len(self.tapDict) == 0
+
+        self.param.hostNetwork.unregisterEventCallback(self)
+        self.param.sambaServer.stopOnNetwork(self)
+        self.param.dhcpServer.stopOnNetwork(self)
 
         self._removeNftNatRule(self.netip, self.netmask)
         VirtUtil.shell('/bin/ifconfig "%s" down' % (self.brname))
@@ -289,15 +289,20 @@ class _NetworkNat(VirtHostNetworkEventCallback):
             VirtUtil.shell('/sbin/nft delete table virt-service-nat')
 
 
-class _NetworkRoute(VirtHostNetworkEventCallback):
+class _NetworkRoute(_NetworkBase, VirtHostNetworkEventCallback):
 
-    def __init__(self, nid):
-        self.nid = nid
-        self.refcount = 0
+    def __init__(self, param, uid, nid):
+        super(_NetworkRoute, self).__init__(param, uid, nid)
+
         self.brname = "vnb%d" % (self.nid)
+        self.param.dhcpServer.startOnNetwork(self)
+        self.param.sambaServer.startOnNetwork(uid, self)
+        self.param.hostNetwork.registerEventCallback(self)
 
     def release(self):
-        pass
+        self.param.hostNetwork.unregisterEventCallback(self)
+        self.param.sambaServer.stopOnNetwork(self)
+        self.param.dhcpServer.stopOnNetwork(self)
 
     def onActiveInterfaceAdd(self, ifName):
         assert False
@@ -306,18 +311,17 @@ class _NetworkRoute(VirtHostNetworkEventCallback):
         assert False
 
 
-class _NetworkIsolate:
+class _NetworkIsolate(_NetworkBase):
 
-    def __init__(self, nid):
-        self.nid = nid
-        self.refcount = 0
+    def __init__(self, param, uid, nid):
+        super(_NetworkIsolate, self).__init__(param, uid, nid)
         self.brname = "vnb%d" % (self.nid)                # it's a virtual bridge interface
         self.tapDict = dict()
 
     def release(self):
         pass
 
-    def addTapIntf(self, sid):
+    def addTapIntf(self, param, sid):
         assert sid not in self.tapDict
 
         tapname = "%s.%d" % (self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
@@ -333,3 +337,11 @@ class _NetworkIsolate:
 
     def getTapInterface(self, sid):
         return self.tapDict.get(sid, None)
+
+
+def _validateNetworkName(networkName):
+    return networkName in ["bridge", "nat", "route", "isolate"]
+
+
+def _validateResSetId(sid):
+    return 1 <= sid <= 128

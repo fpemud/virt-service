@@ -9,52 +9,38 @@ from virt_param import VirtInitializationError
 
 class VirtDhcpServer:
 
-    """If there's a global dnsmasq server, then use that server, else we start a new dnsmasq server
-       Use one server to serve all the networks"""
-    """But, now we only support local dnsmasq server, and use one server to serve one network"""
-
     def __init__(self, param):
         self.param = param
-        self.networkDict = dict()
         self.serverObjDict = dict()
 
         if not os.path.exists("/usr/sbin/dnsmasq"):
             raise VirtInitializationError("/usr/sbin/dnsmasq not found")
+        if VirtUtil.isSocketPortUsed("tcp", 53):
+            raise VirtInitializationError("TCP port 53 has been already used")
+        if VirtUtil.isSocketPortUsed("udp", 53):
+            raise VirtInitializationError("UDP port 53 has been already used")
 
     def release(self):
-        assert len(self.networkDict) == 0
+        assert len(self.serverObjDict) == 0
 
-    def addNetwork(self, nid, serverPort, serverIp, netip, netmask):
-        assert netip.endswith(".0")
-        assert netmask == "255.255.255.0"
-        assert serverIp.endswith(".1")
+    def startOnNetwork(self, netObj):
+        self.serverObjDict[netObj] = _ServerLocal(self, netObj)
 
-        self.networkDict[nid] = _NetworkInfo(serverPort, serverIp, netip, netmask)
-        self.serverObjDict[nid] = _ServerLocal(self, nid)
-
-    def removeNetwork(self, nid):
-        serverObj = self.serverObjDict.pop(nid)
+    def stopOnNetwork(self, netObj):
+        serverObj = self.serverObjDict.pop(netObj)
         serverObj.release()
-        self.networkDict.pop(nid)
-
-
-class _NetworkInfo:
-
-    def __init__(self, serverPort, serverIp, netip, netmask):
-        self.serverPort = serverPort
-        self.serverIp = serverIp
-        self.netip = netip
-        self.netmask = netmask
 
 
 class _ServerLocal:
 
-    def __init__(self, pObj, nid):
-        self.param = pObj.param
-        self.nid = nid
-        self.netInfo = pObj.networkDict[self.nid]
+    def __init__(self, pObj, netObj):
+        assert netObj.netip.endswith(".0")
+        assert netObj.netmask == "255.255.255.0"
+        assert netObj.brip.endswith(".1")
 
-        self.confFile = os.path.join(self.param.netManager.nidGetTmpDir(self.nid), "dnsmasq.conf")
+        self.param = pObj.param
+        self.netObj = netObj
+        self.confFile = os.path.join(self.netObj.getTmpDir(), "dnsmasq.conf")
         self.serverProc = None
 
         self._genDnsmasqCfgFile()
@@ -66,19 +52,15 @@ class _ServerLocal:
         self.serverProc = None
 
     def _genDnsmasqCfgFile(self):
-
         buf = ""
         buf += "strict-order\n"
-        buf += "bind-interfaces\n"
+        buf += "bind-interfaces\n"                            # don't listen on 0.0.0.0
         buf += "except-interface=lo\n"                        # don't listen on 127.0.0.1
-        buf += "interface=%s\n" % (self.netInfo.serverPort)
-        buf += "listen-address=%s\n" % (self.netInfo.serverIp)
-        buf += "dhcp-range=%s,static,%s\n" % (self.netInfo.netip, self.netInfo.netmask)
+        buf += "interface=%s\n" % (self.netObj.brname)
+        buf += "listen-address=%s\n" % (self.netObj.brip)
+        buf += "dhcp-range=%s,static,%s\n" % (self.netObj.netip, self.netObj.netmask)
         for sid in range(1, 128 + 1):
-            macaddr = self.param.netManager.nidGetVmMac(self.nid, sid)
-            ipaddr = self.param.netManager.nidGetVmIp(self.nid, sid)
-            buf += "dhcp-host=%s,%s\n" % (macaddr, ipaddr)
-
+            buf += "dhcp-host=%s,%s\n" % (self.netObj.getVmMac(sid), self.netObj.getVmIp(sid))
         VirtUtil.writeFile(self.confFile, buf)
 
     def _genDnsmasqCommand(self):
@@ -90,68 +72,3 @@ class _ServerLocal:
         cmd += " --pid-file"
         cmd += " --dhcp-no-override"
         return cmd
-
-#    def _startServer(self):
-#        try:
-#            os.mkdir(self.servDir)
-#            self._genDnsmasqCfgFile(self.confFile)
-#            self.serverProc = subprocess.Popen(self._genDnsmasqCommand(), shell = True)
-#        except:
-#            shutil.rmtree(self.servDir)
-#            raise
-#
-#    def _stopServer(self):
-#        self.serverProc.terminate()
-#        self.serverProc.wait()
-#        self.serverProc = None
-#        shutil.rmtree(self.servDir)
-#
-#    def _restartServer(self):
-#        self.serverProc.terminate()
-#        self.serverProc.wait()
-#        self.serverProc = None
-#
-#        try:
-#            self._genDnsmasqCfgFile()
-#            self.serverProc = subprocess.Popen(self._genDnsmasqCommand(), shell = True)
-#        except:
-#            shutil.rmtree(self.servDir)
-#            raise
-#
-#        self.servDir = os.path.join(tmpDir, str(uid), str(nid), "dnsmasq")
-#        self.confFile = os.path.join(self.servDir, "dnsmasq.conf")
-#        self.leaseFile = os.path.join(self.servDir, "dnsmasq.leases")
-#
-#
-#    def _genDnsmasqCfgFile(self):
-#
-#        buf = ""
-#        buf += "strict-order\n"
-#        buf += "bind-interfaces\n"
-# buf += "except-interface=lo\n"                        # don't listen on 127.0.0.1
-#        buf += "\n"
-#        for key, value in self.networkDict.items():
-#            uid, nid = key
-#            buf += "interface=%s"%(value.serverPort)
-#            buf += "listen-address=%s\n"%(value.serverIp)
-#            buf += "dhcp-range=%s/%s,static\n"%(value.netip, value.netmask)
-#            for vmId in range(0, 32):
-#                macaddr = VirtUtil.getVmMacAddress(self.param.macOuiVm, uid, nid, vmId)
-#                ipaddr = VirtUtil.getVmIpAddress(self.param.ip1, uid, nid, vmId)
-#                buf += "dhcp-host=%s,%s\n"%(macaddr, ipaddr)
-#            buf += "\n"
-#
-#        VirtUtil.writeFile(self.confFile, buf)
-#
-#    def _genDnsmasqCommand(self):
-#
-# no pid-file, no lease-file
-# dnsmasq polls /etc/resolv.conf to get the dns change, it's good :)
-#        cmd = "/sbin/dnsmasq"
-# cmd += " --keep-in-foreground"                        # don't run as daemon, so we can control it
-#        cmd += " --no-hosts"
-#        cmd += " --dhcp-no-override"
-#        cmd += " --conf-file=\"%s\""%(self.confFile)
-#        cmd += " --dhcp-leasefile=\"%s\""%(self.leaseFile)
-#        cmd += " --pid-file"
-#        return cmd

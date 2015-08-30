@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
+import os
 import dbus
 import dbus.service
 from virt_util import VirtUtil
@@ -37,13 +38,13 @@ from virt_util import VirtUtil
 #   tapifname:string                   GetTapIntf()
 #   macaddr:string                     GetVmMacAddr()
 #   ipaddr:string                      GetVmIpAddr()
-#   (devpath:string)                   GetVfioDevInfo(devId:int)
+#   (devpath:string)                   GetVfioDevInfo(dev_id:int)
 #
-#   void                               AddTapIntf(networkName:string)
+#   void                               AddTapIntf(network_name:string)
 #   void                               RemoveTapIntf()
-#   void                               NewSambaShare(shareName:string, srcPath:string, readonly:boolean)
-#   void                               DeleteSambaShare(shareName:string)
-#   devId:int                          AddVfioDevice(devName:string, vfioType:string)
+#   void                               NewSambaShare(share_name:string, share_path:string, readonly:boolean)
+#   void                               DeleteSambaShare(share_name:string)
+#   dev_id:int                         AddVfioDevice(devName:string, vfioType:string)
 #   void                               RemoveDevice(devId:int)
 #
 # Notes:
@@ -237,29 +238,33 @@ class DbusResSetObject(dbus.service.Object):
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', out_signature='s')
     def GetTapIntf(self, sender):
         assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
-        assert self.networkName is not None
+        if self.networkName is None:
+            raise VirtServiceException("no tap interface found in the specified virt-machine resource set")
         return self.param.netManager.getTapIntf(self.uid, self.networkName, self.sid)
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', out_signature='s')
     def GetVmMacAddr(self, sender):
         assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
-        assert self.networkName is not None
+        if self.networkName is None:
+            raise VirtServiceException("no tap interface found in the specified virt-machine resource set")
         return self.param.netManager.getVmMac(self.uid, self.networkName, self.sid)
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', out_signature='s')
     def GetVmIpAddr(self, sender):
         assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
-        assert self.networkName is not None
+        if self.networkName is None:
+            raise VirtServiceException("no tap interface found in the specified virt-machine resource set")
         return self.param.netManager.getVmIp(self.uid, self.networkName, self.sid)
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='s')
-    def AddTapIntf(self, networkName, sender):
+    def AddTapIntf(self, network_name, sender):
         assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
-        assert self.networkName is None
+        if self.networkName is not None:
+            raise VirtServiceException("tap interface exists in the specified virt-machine resource set")
 
-        self.param.netManager.addNetwork(self.uid, networkName)
-        self.param.netManager.addTapIntf(self.uid, networkName, self.sid)
-        self.networkName = networkName
+        self.param.netManager.addNetwork(self.uid, network_name)
+        self.param.netManager.addTapIntf(self.uid, network_name, self.sid)
+        self.networkName = network_name
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender')
     def RemoveTapIntf(self, sender):
@@ -273,19 +278,32 @@ class DbusResSetObject(dbus.service.Object):
         self.networkName = None
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='ssb')
-    def NewSambaShare(self, shareName, srcPath, readonly, sender):
+    def NewSambaShare(self, share_name, share_path, readonly, sender):
         assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
 
-        if not srcPath.startswith("/"):
-            raise VirtServiceException("srcPath must be absoulte path")
+        if not os.path.isabs(share_path):
+            raise VirtServiceException("share_path must be absoulte path")
+        if self.networkName is None:
+            raise VirtServiceException("no network resource found in the specified virt-machine resource set")
 
-        self.param.sambaServer.networkAddShare(self.sid, self.vmId, self.shareName, self.srcPath, self.readonly)
+        vmip = self.param.netManager.getVmIp(self.uid, self.networkName, self.sid)
+        ret = self.param.sambaServer.networkAddShare(vmip, self.uid, share_name, share_path, readonly)
+        if ret == 0:
+            pass
+        elif ret == 1:
+            raise VirtServiceException("the specified samba share duplicates")
+        else:
+            assert False
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='i')
-    def DeleteSambaShare(self, shareName, sender):
+    def DeleteSambaShare(self, share_name, sender):
         assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
 
-        self.param.sambaServer.networkRemoveShare(self.sid, self.vmId, self.shareName)
+        if self.networkName is None:
+            return
+
+        vmip = self.param.netManager.getVmIp(self.uid, self.networkName, self.sid)
+        self.param.sambaServer.networkRemoveShare(vmip, self.uid, share_name)
 
 
 class DbusVmObject(dbus.service.Object):

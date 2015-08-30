@@ -5,9 +5,8 @@ import os
 import re
 import pwd
 import grp
-import shutil
-import signal
-import subprocess
+# import signal
+import ipaddress
 import configparser
 from virt_util import VirtUtil
 from virt_param import VirtInitializationError
@@ -15,276 +14,158 @@ from virt_param import VirtInitializationError
 
 class VirtSambaServer:
 
-    """If there's a global samba server, then use that server, else we start a new samba server
-       Use one server to serve all the networks"""
-
     def __init__(self, param):
         self.param = param
-        self.networkDict = dict()
-        self.globalOrLocal = (VirtUtil.getPidBySocket("0.0.0.0:139") != -1)
-        self.serverObj = None
-
-        if self.globalOrLocal:
-            cfg = configparser.RawConfigParser()
-            cfg.read("/etc/samba/smb.conf")
-
-            if not cfg.has_option("global", "security") or cfg.get("global", "security") != "user":
-                raise VirtInitializationError("option \"global/security\" of main samba server must have value \"user\"")
-
-            if cfg.has_option("global", "passdb backend") and cfg.get("global", "passdb backend") != "tdbsam":
-                raise VirtInitializationError("option \"global/passdb backend\" of main samba server must have value \"tdbsam\"")
-
-            if cfg.has_option("global", "workgroup") and cfg.get("global", "workgroup") != "WORKGROUP":
-                raise VirtInitializationError("option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
-
-            if not os.path.isdir("/etc/samba/hosts.d"):
-                raise VirtInitializationError("per-host configuration directory (/etc/samba/hosts.d) does not exist")
-            if cfg.has_option("global", "include") and cfg.get("global", "include") != "/etc/samba/hosts.d/%I.conf":
-                raise VirtInitializationError("option \"global/include\" of main samba server must have value \"/etc/samba/hosts.d/%I.conf\"")
-
-            ret = VirtUtil.shell("/usr/bin/pdbedit -L", "stdout")
-            m = re.search("^nobody:[0-9]+:.*$", ret, re.MULTILINE)
-            if m is None:
-                raise VirtInitializationError("main samba server must have user \"nobody\"")
-
-    def release(self):
-        assert len(self.networkDict) == 0
-
-    def addNetwork(self, nid, uid, serverIp, netip, netmask):
-        self.networkDict[nid] = _NetworkInfo(uid, -1)
-
-    def removeNetwork(self, nid):
-        assert len(self.networkDict[nid].shareDict) == 0
-        del self.networkDict[nid]
-
-    def networkGetAccountInfo(self, nid):
-        """return (username, password)"""
-        return ("guest", "")
-
-    def networkAddShare(self, nid, vmId, shareName, srcPath, readonly):
-        assert "_" not in shareName
-
-        # get _NetworkInfo
-        netInfo = self.networkDict[nid]
-
-        # add ShareInfo
-        key = (vmId, shareName)
-        value = _ShareInfo(srcPath, readonly)
-        netInfo.shareDict[key] = value
-
-        # enable or update server
-        if self.serverObj is None:
-            self._startServer()
-        else:
-            self.serverObj.updateShare()
-
-    def networkRemoveShare(self, nid, vmId, shareName):
-
-        # get _NetworkInfo
-        netInfo = self.networkDict[nid]
-
-        # delete ShareInfo
-        key = (vmId, shareName)
-        del netInfo.shareDict[key]
-
-        # disable or update server
-        bShouldDisable = True
-        for netInfo in list(self.networkDict.values()):
-            if len(netInfo.shareDict) > 0:
-                bShouldDisable = False
-                break
-
-        if bShouldDisable:
-            self._stopServer()
-        else:
-            self.serverObj.updateShare()
-
-    def _startServer(self):
-        assert self.serverObj is None
-
-        pid = VirtUtil.getPidBySocket("0.0.0.0:139")
-        if pid != -1:
-            self.serverObj = _ServerGlobal(self, pid)
-            try:
-                self.serverObj.checkServer()
-            except:
-                self.serverObj.release()
-                self.serverObj = None
-                raise
-        else:
-            self.serverObj = _ServerLocal(self)
-
-    def _stopServer(self):
-        self.serverObj.release()
-        self.serverObj = None
-
-
-class _NetworkInfo:
-
-    def __init__(self, uid, serverPort):
-        self.uid = uid
-        self.serverPort = serverPort
-        self.username = pwd.getpwuid(self.uid).pw_name
-        self.groupname = grp.getgrgid(pwd.getpwuid(self.uid).pw_gid).gr_name
+        self.netList = []
+        self.uidDict = dict()
         self.shareDict = dict()
 
+        if not os.path.exists("/usr/sbin/smbd"):
+            raise VirtInitializationError("/usr/sbin/smbd not found")
 
-class _ShareInfo:
+        if not os.path.exists("/usr/bin/pdbedit"):
+            raise VirtInitializationError("/usr/bin/pdbedit not found")
 
-    def __init__(self, srcPath, readonly):
-        self.srcPath = srcPath
-        self.readonly = readonly
+        if VirtUtil.getPidBySocket("0.0.0.0:139") == -1:
+            raise VirtInitializationError("no samba server running")
 
+        smbCfg = "/etc/samba/smb.conf"
+        if not os.path.exists(smbCfg):
+            raise VirtInitializationError("samba configuration file %s does not exists" % (smbCfg))
 
-class _ServerGlobal:
-
-    """The configuration of global server can't be modified when it's running"""
-
-    def __init__(self, pObj, sambaPid):
-        self.param = pObj.param
-        self.pObj = pObj                # parent object
-        self.sambaPid = sambaPid
-
-        self.confDir = "/etc/samba"
-
-        self.updateShare()
-
-    def release(self):
-        os.kill(self.sambaPid, signal.SIGHUP)
-
-    def checkServer(self):
-        """Check if the configure of global server satisfy our requirement"""
-
-        cfg = configparser.RawConfigParser()
-        cfg.read("/etc/samba/smb.conf")
+        cfg = None
+        try:
+            cfg = configparser.RawConfigParser()
+            cfg.read("/etc/samba/smb.conf")
+        except:
+            raise VirtInitializationError("invalid samba configuration file %s" % (smbCfg))
 
         if not cfg.has_option("global", "security") or cfg.get("global", "security") != "user":
-            raise Exception("option \"global/security\" of main samba server must have value \"user\"")
+            raise VirtInitializationError("option \"global/security\" in samba configuration must have value \"user\"")
 
         if cfg.has_option("global", "passdb backend") and cfg.get("global", "passdb backend") != "tdbsam":
-            raise Exception("option \"global/passdb backend\" of main samba server must have value \"tdbsam\"")
+            raise VirtInitializationError("option \"global/passdb backend\" in samba configuration must have value \"tdbsam\"")
 
         if cfg.has_option("global", "workgroup") and cfg.get("global", "workgroup") != "WORKGROUP":
-            raise Exception("option \"global/workgroup\" of main samba server must have value \"WORKGROUP\"")
+            raise VirtInitializationError("option \"global/workgroup\" in samba configuration must have value \"WORKGROUP\"")
 
         if not os.path.isdir("/etc/samba/hosts.d"):
-            raise Exception("per-host configuration directory (/etc/samba/hosts.d) does not exist")
+            raise VirtInitializationError("per-host configuration directory (/etc/samba/hosts.d) does not exist")
+
         if cfg.has_option("global", "include") and cfg.get("global", "include") != "/etc/samba/hosts.d/%I.conf":
-            raise Exception("option \"global/include\" of main samba server must have value \"/etc/samba/hosts.d/%I.conf\"")
+            raise VirtInitializationError("option \"global/include\" in samba configuration must have value \"/etc/samba/hosts.d/%I.conf\"")
 
         ret = VirtUtil.shell("/usr/bin/pdbedit -L", "stdout")
         m = re.search("^nobody:[0-9]+:.*$", ret, re.MULTILINE)
         if m is None:
-            raise Exception("main samba server must have user \"nobody\"")
-
-    def updateShare(self):
-        # recreate all the share files
-        _MyUtil.genShareFiles("/etc/samba/hosts.d", self.param, self.pObj.networkDict)
-
-        # update samba
-        os.kill(self.sambaPid, signal.SIGHUP)
-
-
-class _ServerLocal:
-
-    def __init__(self, pObj):
-        self.param = pObj.param
-        self.pObj = pObj        # parent object
-
-        self.servDir = os.path.join(self.pObj.param.tmpDir, "samba")
-        self.confFile = os.path.join(self.servDir, "smb.conf")
-        self.passdbFile = os.path.join(self.servDir, "passdb.tdb")
-
-        try:
-            os.mkdir(self.servDir)
-            self._genPassdbFile()
-            self._genSmbdConf()
-            self.serverProc = subprocess.Popen(self._genSmbdCommand(), shell=True)
-        except:
-            shutil.rmtree(self.servDir)
-            raise
+            raise VirtInitializationError("main samba server must have user \"nobody\"")
 
     def release(self):
-        self.serverProc.terminate()
-        self.serverProc.wait()
-        self.serverProc = None
-        shutil.rmtree(self.servDir)
+        assert len(self.uidDict) == 0
+        assert len(self.shareDict) == 0
 
-    def updateShare(self):
-        self._genSmbdConf()
-        self.serverProc.send_signal(signal.SIGHUP)
+    def startOnNetwork(self, uid, netObj):
+        self.netList.append(_NetworkInfo(netObj.netip, netObj.netmask, uid))
 
-    def _genPassdbFile(self):
-        VirtUtil.tdbFileCreate(self.passdbFile)
+    def stopOnNetwork(self, netObj):
+        try:
+            self.netList.remove(_NetworkInfo(netObj.netip, netObj.netmask, None))
+        except ValueError:
+            pass
 
-    def _genSmbdConf(self):
-
-        # get interface list
-        ifList = []
-        for netInfo in list(self.pObj.networkDict.values()):
-            ifList.append(netInfo.serverPort)
-
-        # generate smb.conf
-        buf = ""
-        buf += "[global]\n"
-        buf += "security                   = user\n"
-        buf += "bind interfaces only       = yes\n"
-        buf += "interfaces                 = %s\n" % (" ".join(ifList))
-        buf += "private dir                = %s\n" % (self.servDir)
-        buf += "pid directory              = %s\n" % (self.servDir)
-        buf += "lock directory             = %s\n" % (self.servDir)
-        buf += "state directory            = %s\n" % (self.servDir)
-        buf += "log file                   = %s/log.smbd\n" % (self.servDir)
-        buf += "\n\n"
-        buf += "include                    = %%m.conf\n"
-        buf += "\n"
-        VirtUtil.writeFile(self.confFile, buf)
-
-        # generate share files
-        _MyUtil.genShareFiles(self.servDir, self.param, self.pObj.networkDict)
-
-    def _genSmbdCommand(self):
-
-        cmd = "/sbin/smbd"
-        cmd += " -F"                            # don't run as daemon, so we can control it
-        cmd += " -s \"%s\"" % (self.confFile)
-        return cmd
-
-
-class _MyUtil:
-
-    @staticmethod
-    def genShareFiles(dstDir, param, networkDict):
-        # create all the share files
-        sfDict = dict()
-        for nid, netInfo in list(networkDict.items()):
-            for skey, value in list(netInfo.shareDict.items()):
-                vmId = skey[0]
-                shareName = skey[1]
-                vmIp = VirtUtil.getVmIpAddress(param.ip1, netInfo.uid, nid, vmId)
-                if vmIp not in sfDict:
-                    sfDict[vmIp] = ""
-                sfDict[vmIp] += _MyUtil.genSharePart(netInfo.uid, nid, vmId, vmIp, netInfo.username, netInfo.groupname,
-                                                     shareName, value.srcPath, value.readonly)
-                sfDict[vmIp] += "\n"
-        for vmIp, fileBuf in list(sfDict.items()):
-            VirtUtil.writeFile(os.path.join(dstDir, "%s.conf" % (vmIp)), fileBuf)
-
-    @staticmethod
-    def genSharePart(uid, nid, vmId, vmIp, username, groupname, shareName, srcPath, readonly):
+    def networkAddShare(self, vmIp, uid, shareName, srcPath, readonly):
+        # return 0: success
+        # return 1: share already exists;
         assert "_" not in shareName
 
-        buf = ""
-        buf += "[%d_%d_%d_%s]\n" % (uid, nid, vmId, shareName)
-        buf += "path = %s\n" % (srcPath)
-        buf += "guest ok = yes\n"
-        buf += "guest only = yes\n"
-        buf += "force user = %s\n" % (username)
-        buf += "force group = %s\n" % (groupname)
-        if readonly:
-            buf += "writable = no\n"
-        else:
-            buf += "writable = yes\n"
-        buf += "hosts allow = %s\n" % (vmIp)
+        found = False
+        for n in self.netList:
+            if ipaddress.ip_address(vmIp) in ipaddress.ip_network("%s/%s" % (n.netip, n.netmask)):
+                assert uid == n.uid
+                found = True
+                break
+        assert found
 
-        return buf
+        if vmIp not in self.shareDict:
+            self.uidDict[vmIp] = uid
+            self.shareDict[vmIp] = [_ShareInfo(shareName, srcPath, readonly)]
+        else:
+            assert self.uidDict[vmIp] == uid
+            si = _ShareInfo(shareName, srcPath, readonly)
+            if si in self.shareDict[vmIp]:
+                return 1
+            self.shareDict[vmIp].append(si)
+
+        self._updateSambaCfg(vmIp)
+        return 0
+
+    def networkRemoveShare(self, vmIp, uid, shareName):
+        try:
+            si = _ShareInfo(shareName, None, None)
+            self.shareDict.get(vmIp, []).remove(si)
+        except ValueError:
+            pass
+
+        if len(self.shareDict[vmIp]) == 0:
+            del self.shareDict[vmIp]
+            del self.uidDict[vmIp]
+
+        self._updateSambaCfg(vmIp)
+
+    def _updateSambaCfg(self, vmIp):
+        cfgfile = "/etc/samba/hosts.d/%s.conf" % (vmIp)
+
+        if vmIp not in self.shareDict:
+            if os.path.exists(cfgfile):
+                os.remove(cfgfile)
+        else:
+            username = pwd.getpwuid(self.uidDict[vmIp]).pw_name
+            groupname = grp.getgrgid(pwd.getpwuid(self.uidDict[vmIp]).pw_gid).gr_name
+
+            buf = ""
+            for si in self.shareDict[vmIp]:
+                buf += "[%s]\n" % (si.shareName)
+                buf += "path = %s\n" % (si.srcPath)
+                buf += "guest ok = yes\n"
+                buf += "guest only = yes\n"
+                buf += "force user = %s\n" % (username)
+                buf += "force group = %s\n" % (groupname)
+                if si.readonly:
+                    buf += "writable = no\n"
+                else:
+                    buf += "writable = yes\n"
+                buf += "hosts allow = %s\n" % (vmIp)
+                buf += "\n"
+            with open(cfgfile, "w") as f:
+                f.write(buf)
+
+        # tell samba to re-read configuration
+        # os.kill(self.sambaPid, signal.SIGHUP)
+
+
+class _NetworkInfo:
+
+    def __init__(self, netip, netmask, uid):
+        self.netip = netip
+        self.netmask = netmask
+        self.uid = uid
+
+    def __eq__(self, other):
+        return self.netip == other.netip and self.netmask == other.netmask
+
+    def __ne__(self, other):
+        return self.netip != other.netip and self.netmask == other.netmask
+
+
+class _ShareInfo:
+
+    def __init__(self, shareName, srcPath, readonly):
+        self.shareName = shareName
+        self.srcPath = srcPath
+        self.readonly = readonly
+
+    def __eq__(self, other):
+        return self.shareName == other.shareName
+
+    def __ne__(self, other):
+        return self.shareName != other.shareName

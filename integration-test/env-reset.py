@@ -119,7 +119,12 @@ if __name__ == "__main__":
         delBridgeInterface(intf)
 
     if getProcessId("virt-service") is not None:
+        print("Killing process virt-service")
         killProcess("virt-service")
+
+    if getProcessId("dnsmasq") is not None:
+        print("Killing process dnsmasq")
+        killProcess("dnsmasq")
 
     if os.path.exists("/tmp/virt-service"):
         print("Removing directory /tmp/virt-service")
