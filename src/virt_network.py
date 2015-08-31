@@ -3,6 +3,7 @@
 
 import os
 import re
+import shutil
 from virt_util import VirtUtil
 from virt_param import VirtInitializationError
 from virt_host_network import VirtHostNetworkEventCallback
@@ -133,6 +134,9 @@ class _NetworkBase:
         if not os.path.exists(os.path.join(self.param.tmpDir, str(self.nid))):
             os.makedirs(os.path.join(self.param.tmpDir, str(self.nid)))
 
+    def release(self):
+        shutil.rmtree(os.path.join(self.param.tmpDir, str(self.nid)))
+
     def getTmpDir(self):
         return os.path.join(self.param.tmpDir, str(self.nid))
 
@@ -163,6 +167,7 @@ class _NetworkBridge(_NetworkBase, VirtHostNetworkEventCallback):
         self.param.hostNetwork.unregisterEventCallback(self)
         VirtUtil.shell('/bin/ifconfig "%s" down' % (self.brname))
         VirtUtil.shell('/sbin/brctl delbr "%s"' % (self.brname))
+        super(_NetworkBridge, self).release()
 
     def onActiveInterfaceAdd(self, ifName):
         # some interface like wlan0 has no bridging capbility, we ignore them
@@ -234,6 +239,8 @@ class _NetworkNat(_NetworkBase, VirtHostNetworkEventCallback):
         VirtUtil.shell('/bin/ifconfig "%s" down' % (self.brname))
         VirtUtil.shell('/sbin/brctl delbr "%s"' % (self.brname))
 
+        super(_NetworkNat, self).release()
+
     def onActiveInterfaceAdd(self, ifName):
         self.mainIntfList.append(ifName)
 
@@ -303,6 +310,7 @@ class _NetworkRoute(_NetworkBase, VirtHostNetworkEventCallback):
         self.param.hostNetwork.unregisterEventCallback(self)
         self.param.sambaServer.stopOnNetwork(self)
         self.param.dhcpServer.stopOnNetwork(self)
+        super(_NetworkRoute, self).release()
 
     def onActiveInterfaceAdd(self, ifName):
         assert False
@@ -319,7 +327,7 @@ class _NetworkIsolate(_NetworkBase):
         self.tapDict = dict()
 
     def release(self):
-        pass
+        super(_NetworkIsolate, self).release()
 
     def addTapIntf(self, param, sid):
         assert sid not in self.tapDict
