@@ -99,7 +99,7 @@ class VirtSambaServer:
         self._updateSambaCfg(vmIp)
         return 0
 
-    def networkRemoveShare(self, vmIp, uid, shareName):
+    def networkRemoveShare(self, vmIp, shareName):
         try:
             si = _ShareInfo(shareName, None, None)
             self.shareDict.get(vmIp, []).remove(si)
@@ -110,6 +110,12 @@ class VirtSambaServer:
             del self.shareDict[vmIp]
             del self.uidDict[vmIp]
 
+        self._updateSambaCfg(vmIp)
+
+    def networkRemoveShareAll(self, vmIp):
+        if vmIp in self.shareDict:
+            del self.shareDict[vmIp]
+            del self.uidDict[vmIp]
         self._updateSambaCfg(vmIp)
 
     def _updateSambaCfg(self, vmIp):

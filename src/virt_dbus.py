@@ -87,9 +87,7 @@ class DbusMainObject(dbus.service.Object):
         self.handle = dbus.SystemBus().add_signal_receiver(self.onNameOwnerChanged, 'NameOwnerChanged', None, None)
 
     def release(self):
-        assert len(self.resSetDict) == 0
-        assert len(self.vmDict) == 0
-
+        # nothing to do if len(self.resSetDict) > 0 or len(self.vmDict) > 0
         dbus.SystemBus().remove_signal_receiver(self.handle)
         self.remove_from_connection()
 
@@ -232,7 +230,12 @@ class DbusResSetObject(dbus.service.Object):
         dbus.service.Object.__init__(self, bus_name, '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, self.sid))
 
     def release(self):
-        assert self.networkName is None
+        if self.networkName is not None:
+            vmip = self.param.netManager.getVmIp(self.uid, self.networkName, self.sid)
+            self.param.sambaServer.networkRemoveShareAll(vmip)
+            self.param.netManager.removeTapIntf(self.uid, self.networkName, self.sid)
+            self.param.netManager.removeNetwork(self.uid, self.networkName)
+            self.networkName = None
         self.remove_from_connection()
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', out_signature='s')
@@ -303,7 +306,7 @@ class DbusResSetObject(dbus.service.Object):
             return
 
         vmip = self.param.netManager.getVmIp(self.uid, self.networkName, self.sid)
-        self.param.sambaServer.networkRemoveShare(vmip, self.uid, share_name)
+        self.param.sambaServer.networkRemoveShare(vmip, share_name)
 
 
 class DbusVmObject(dbus.service.Object):
