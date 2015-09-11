@@ -4,6 +4,7 @@
 import os
 import dbus
 import dbus.service
+from gi.repository import GLib
 from virt_util import VirtUtil
 
 ################################################################################
@@ -107,6 +108,10 @@ class DbusMainObject(dbus.service.Object):
                 if resset.owner == old:
                     self._resSetRemove(resset.uid, resset.sid, resset)
 
+        # add timeout
+        if len(self.resSetDict) == 0 and self.param.timeoutHandler is None:
+            self.param.timeoutHandler = GLib.timeout_add_seconds(60, lambda *args: self.param.mainloop.quit())
+
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', out_signature='i')
     def NewVmResSet(self, sender=None):
         self._checkInitError()
@@ -128,6 +133,11 @@ class DbusMainObject(dbus.service.Object):
                 del self.resSetDict[uid]
             raise
 
+        # remove timeout
+        if self.param.timeoutHandler is not None:
+            GLib.source_remove(self.param.timeoutHandler)
+            self.param.timeoutHandler = None
+
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', in_signature='i')
     def DeleteVmResSet(self, sid, sender=None):
         self._checkInitError()
@@ -142,6 +152,11 @@ class DbusMainObject(dbus.service.Object):
             raise VirtServiceException("virt-machine resource set has been binded to virt-machine %s" % (vm.name))
 
         self._resSetRemove(uid, sid, resset)
+
+        # add timeout
+        assert self.param.timeoutHandler is None
+        if len(self.resSetDict) == 0:
+            self.param.timeoutHandler = GLib.timeout_add_seconds(60, lambda *args: self.param.mainloop.quit())
 
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', in_signature='si', out_signature='i')
     def AttachVm(self, vmname, sid, sender=None):
