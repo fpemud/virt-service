@@ -110,7 +110,7 @@ class DbusMainObject(dbus.service.Object):
 
         # add timeout
         if len(self.resSetDict) == 0 and self.param.timeoutHandler is None:
-            self.param.timeoutHandler = GLib.timeout_add_seconds(60, lambda *args: self.param.mainloop.quit())
+            self.param.timeoutHandler = GLib.timeout_add_seconds(self.param.timeout, lambda *args: self.param.mainloop.quit())
 
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', out_signature='i')
     def NewVmResSet(self, sender=None):
@@ -118,6 +118,7 @@ class DbusMainObject(dbus.service.Object):
         uid = VirtUtil.dbusGetUserId(self.connection, sender)
 
         # create new resource set object
+        sid = None
         if uid not in self.resSetDict:
             self.resSetDict[uid] = dict()
         try:
@@ -127,7 +128,6 @@ class DbusMainObject(dbus.service.Object):
 
             sObj = DbusResSetObject(self.param, uid, sid, sender)
             self.resSetDict[uid][sid] = sObj
-            return sid
         except:
             if len(self.resSetDict[uid]) == 0:
                 del self.resSetDict[uid]
@@ -137,6 +137,8 @@ class DbusMainObject(dbus.service.Object):
         if self.param.timeoutHandler is not None:
             GLib.source_remove(self.param.timeoutHandler)
             self.param.timeoutHandler = None
+
+        return sid
 
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', in_signature='i')
     def DeleteVmResSet(self, sid, sender=None):
@@ -156,7 +158,7 @@ class DbusMainObject(dbus.service.Object):
         # add timeout
         assert self.param.timeoutHandler is None
         if len(self.resSetDict) == 0:
-            self.param.timeoutHandler = GLib.timeout_add_seconds(60, lambda *args: self.param.mainloop.quit())
+            self.param.timeoutHandler = GLib.timeout_add_seconds(self.param.timeout, lambda *args: self.param.mainloop.quit())
 
     @dbus.service.method('org.fpemud.VirtService', sender_keyword='sender', in_signature='si', out_signature='i')
     def AttachVm(self, vmname, sid, sender=None):
@@ -214,7 +216,7 @@ class DbusMainObject(dbus.service.Object):
     def _resSetGetAttachedVm(self, uid, sid):
         if uid in self.vmDict:
             for vmObj in self.vmDict[uid].values():
-                if vmObj.sid == sid:
+                if vmObj.vmid == sid:
                     return vmObj
         return None
 

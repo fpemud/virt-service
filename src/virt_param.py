@@ -27,6 +27,8 @@ class VirtParam:
         self.sambaServer = None
 
         self.initError = None
+
+        self.timeout = 60
         self.timeoutHandler = None
 
 

@@ -55,26 +55,6 @@ class Test_ResSet_TapIntfNat(unittest.TestCase):
         pass
 
 
-class Test_Vm_Basic(unittest.TestCase):
-
-    def setUp(self):
-        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
-        self.uid = os.getuid()
-
-    def runTest(self):
-        sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
-        dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
-
-        vmid = self.dbusObj.AttachVm("abc", sid, dbus_interface='org.fpemud.VirtService')
-        dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VirtMachines/%d' % (self.uid, vmid))
-
-        self.dbusObj.DetachVm(vmid, dbus_interface='org.fpemud.VirtService')
-        self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
-
-    def tearDown(self):
-        pass
-
-
 class Test_ResSet_SambaShare(unittest.TestCase):
 
     def setUp(self):
@@ -109,12 +89,112 @@ class Test_ResSet_SambaShare(unittest.TestCase):
         pass
 
 
+class Test_ResSet_MultiInstance(unittest.TestCase):
+
+    def setUp(self):
+        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
+        self.uid = os.getuid()
+
+    def runTest(self):
+        sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
+        obj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
+
+        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
+        self.assertFalse(_intfExists("vnb1"))
+
+        obj.AddTapIntf("nat")
+
+        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
+        self.assertTrue(_intfExists("vnb1"))
+        self.assertTrue(_intfExists("vnb1.1"))
+
+        obj.NewSambaShare("abc", os.getcwd(), True)
+
+        self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
+        self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+
+        obj.NewSambaShare("abc2", os.getcwd(), True)
+
+        self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+        self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+
+        sid2 = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
+        obj2 = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid2))
+        obj2.AddTapIntf("nat")
+        obj2.NewSambaShare("abc", os.getcwd(), True)
+        obj2.NewSambaShare("abc2", os.getcwd(), True)
+
+        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
+        self.assertTrue(_intfExists("vnb1"))
+        self.assertTrue(_intfExists("vnb1.1"))
+        self.assertTrue(_intfExists("vnb1.2"))
+        self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.13.conf"))
+        self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.13.conf").read())
+        self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.13.conf").read())
+
+        obj.DeleteSambaShare("abc")
+
+        self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
+        self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+        self.assertFalse("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
+
+        obj.DeleteSambaShare("abc2")
+
+        self.assertFalse(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
+
+        obj.RemoveTapIntf()
+
+        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
+        self.assertTrue(_intfExists("vnb1"))
+        self.assertFalse(_intfExists("vnb1.1"))
+        self.assertTrue(_intfExists("vnb1.2"))
+
+        obj2.DeleteSambaShare("abc")
+        obj2.DeleteSambaShare("abc2")
+
+        self.assertTrue(len(os.listdir("/etc/samba/hosts.d")) == 0)
+
+        obj2.RemoveTapIntf()
+
+        self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
+        self.assertFalse(_intfExists("vnb1"))
+        self.assertFalse(_intfExists("vnb1.1"))
+        self.assertFalse(_intfExists("vnb1.2"))
+
+        self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
+        self.dbusObj.DeleteVmResSet(sid2, dbus_interface='org.fpemud.VirtService')
+
+    def tearDown(self):
+        pass
+
+
+class Test_Vm_Basic(unittest.TestCase):
+
+    def setUp(self):
+        self.dbusObj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService')
+        self.uid = os.getuid()
+
+    def runTest(self):
+        sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
+        dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
+
+        vmid = self.dbusObj.AttachVm("abc", sid, dbus_interface='org.fpemud.VirtService')
+        dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VirtMachines/%d' % (self.uid, vmid))
+
+        self.dbusObj.DetachVm(vmid, dbus_interface='org.fpemud.VirtService')
+        self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
+
+    def tearDown(self):
+        pass
+
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(Test_ResSet_Basic())
     suite.addTest(Test_ResSet_TapIntfNat())
-    suite.addTest(Test_Vm_Basic())
     suite.addTest(Test_ResSet_SambaShare())
+    suite.addTest(Test_ResSet_MultiInstance())
+    suite.addTest(Test_Vm_Basic())
     return suite
 
 
