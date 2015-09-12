@@ -283,8 +283,13 @@ class DbusResSetObject(dbus.service.Object):
             raise VirtServiceException("tap interface exists in the specified virt-machine resource set")
 
         self.param.netManager.addNetwork(self.uid, network_name)
-        self.param.netManager.addTapIntf(self.uid, network_name, self.sid)
         self.networkName = network_name
+
+        try:
+            self.param.netManager.addTapIntf(self.uid, network_name, self.sid)
+        except:
+            self.param.netManager.removeNetwork(self.uid, self.networkName)
+            self.networkName = None
 
     @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender')
     def RemoveTapIntf(self, sender):
