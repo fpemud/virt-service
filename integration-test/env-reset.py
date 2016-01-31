@@ -139,6 +139,6 @@ if __name__ == "__main__":
         proc = subprocess.Popen("/sbin/nft list tables", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         out = proc.communicate()[0]
         assert proc.returncode == 0
-        if re.search("^table virt-service-nat$", out, re.M) is not None:
+        if re.search("^table ip virt-service-nat$", out, re.M) is not None:
             print("Deleting nftable virt-service-nat")
             subprocess.Popen("/sbin/nft delete table virt-service-nat", shell=True).wait()
