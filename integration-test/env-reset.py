@@ -39,11 +39,13 @@ def getSubInterfaceList():
 
 
 def delTunTapInterface(intfname):
-    brname = intfname.split(".")[0]
     ret = subprocess.Popen('/bin/ifconfig "%s" down' % (intfname), shell=True).wait()
     assert ret == 0
-    ret = subprocess.Popen('/sbin/brctl delif "%s" "%s"' % (brname, intfname), shell=True).wait()
-    assert ret == 0
+
+    # bridge interface may not exists
+    brname = intfname.split(".")[0]
+    subprocess.Popen('/sbin/brctl delif "%s" "%s" > /dev/null' % (brname, intfname), shell=True).wait()
+
     ret = subprocess.Popen('/bin/ip tuntap del dev "%s" mode tap' % (intfname), shell=True).wait()
     assert ret == 0
 
