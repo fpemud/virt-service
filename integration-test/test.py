@@ -37,13 +37,13 @@ class Test_ResSet_TapIntfNat(unittest.TestCase):
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
         self.assertFalse(_intfExists("vnb1"))
 
-        obj.AddTapIntf("nat")
+        obj.AddTapIntf("nat", dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
         self.assertTrue(_intfExists("vnb1"))
         self.assertTrue(_intfExists("vnb1.1"))
 
-        obj.RemoveTapIntf()
+        obj.RemoveTapIntf(dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
         self.assertFalse(_intfExists("vnb1"))
@@ -64,25 +64,25 @@ class Test_ResSet_SambaShare(unittest.TestCase):
     def runTest(self):
         sid = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
         obj = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid))
-        obj.AddTapIntf("nat")
+        obj.AddTapIntf("nat", dbus_interface='org.fpemud.VirtService.VmResSet')
 
-        obj.NewSambaShare("abc", os.getcwd(), True)
+        obj.NewSambaShare("abc", os.getcwd(), True, dbus_interface='org.fpemud.VirtService.VmResSet')
         self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
         self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
 
-        obj.NewSambaShare("abc2", os.getcwd(), True)
+        obj.NewSambaShare("abc2", os.getcwd(), True, dbus_interface='org.fpemud.VirtService.VmResSet')
         self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
         self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
 
-        obj.DeleteSambaShare("abc")
+        obj.DeleteSambaShare("abc", dbus_interface='org.fpemud.VirtService.VmResSet')
         self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
         self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
         self.assertFalse("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
 
-        obj.DeleteSambaShare("abc2")
+        obj.DeleteSambaShare("abc2", dbus_interface='org.fpemud.VirtService.VmResSet')
         self.assertTrue(len(os.listdir("/etc/samba/hosts.d")) == 0)
 
-        obj.RemoveTapIntf()
+        obj.RemoveTapIntf(dbus_interface='org.fpemud.VirtService.VmResSet')
         self.dbusObj.DeleteVmResSet(sid, dbus_interface='org.fpemud.VirtService')
 
     def tearDown(self):
@@ -102,27 +102,27 @@ class Test_ResSet_MultiInstance(unittest.TestCase):
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
         self.assertFalse(_intfExists("vnb1"))
 
-        obj.AddTapIntf("nat")
+        obj.AddTapIntf("nat", dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
         self.assertTrue(_intfExists("vnb1"))
         self.assertTrue(_intfExists("vnb1.1"))
 
-        obj.NewSambaShare("abc", os.getcwd(), True)
+        obj.NewSambaShare("abc", os.getcwd(), True, dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
         self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
 
-        obj.NewSambaShare("abc2", os.getcwd(), True)
+        obj.NewSambaShare("abc2", os.getcwd(), True, dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
         self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
 
         sid2 = self.dbusObj.NewVmResSet(dbus_interface='org.fpemud.VirtService')
         obj2 = dbus.SystemBus().get_object('org.fpemud.VirtService', '/org/fpemud/VirtService/%d/VmResSets/%d' % (self.uid, sid2))
-        obj2.AddTapIntf("nat")
-        obj2.NewSambaShare("abc", os.getcwd(), True)
-        obj2.NewSambaShare("abc2", os.getcwd(), True)
+        obj2.AddTapIntf("nat", dbus_interface='org.fpemud.VirtService.VmResSet')
+        obj2.NewSambaShare("abc", os.getcwd(), True, dbus_interface='org.fpemud.VirtService.VmResSet')
+        obj2.NewSambaShare("abc2", os.getcwd(), True, dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
         self.assertTrue(_intfExists("vnb1"))
@@ -132,29 +132,29 @@ class Test_ResSet_MultiInstance(unittest.TestCase):
         self.assertTrue("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.13.conf").read())
         self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.13.conf").read())
 
-        obj.DeleteSambaShare("abc")
+        obj.DeleteSambaShare("abc", dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertTrue(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
         self.assertTrue("[abc2]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
         self.assertFalse("[abc]\n" in open("/etc/samba/hosts.d/10.0.1.12.conf").read())
 
-        obj.DeleteSambaShare("abc2")
+        obj.DeleteSambaShare("abc2", dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertFalse(os.path.exists("/etc/samba/hosts.d/10.0.1.12.conf"))
 
-        obj.RemoveTapIntf()
+        obj.RemoveTapIntf(dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "1")
         self.assertTrue(_intfExists("vnb1"))
         self.assertFalse(_intfExists("vnb1.1"))
         self.assertTrue(_intfExists("vnb1.2"))
 
-        obj2.DeleteSambaShare("abc")
-        obj2.DeleteSambaShare("abc2")
+        obj2.DeleteSambaShare("abc", dbus_interface='org.fpemud.VirtService.VmResSet')
+        obj2.DeleteSambaShare("abc2", dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertTrue(len(os.listdir("/etc/samba/hosts.d")) == 0)
 
-        obj2.RemoveTapIntf()
+        obj2.RemoveTapIntf(dbus_interface='org.fpemud.VirtService.VmResSet')
 
         self.assertEqual(_fileRead("/proc/sys/net/ipv4/ip_forward"), "0")
         self.assertFalse(_intfExists("vnb1"))
