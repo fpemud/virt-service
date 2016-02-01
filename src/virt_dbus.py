@@ -320,7 +320,7 @@ class DbusResSetObject(dbus.service.Object):
         else:
             assert False
 
-    @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='i')
+    @dbus.service.method('org.fpemud.VirtService.VmResSet', sender_keyword='sender', in_signature='s')
     def DeleteSambaShare(self, share_name, sender):
         assert self.uid == VirtUtil.dbusGetUserId(self.connection, sender)
 
