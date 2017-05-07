@@ -4,6 +4,7 @@
 import os
 import re
 import time
+import pyroute2
 import subprocess
 
 
@@ -39,23 +40,26 @@ def getSubInterfaceList():
 
 
 def delTunTapInterface(intfname):
-    ret = subprocess.Popen('/bin/ifconfig "%s" down' % (intfname), shell=True).wait()
-    assert ret == 0
+    with pyroute2.IPRoute() as ip:
+        idx = ip.link_lookup(ifname=intfname)[0]
+        ip.link("set", index=idx, state="down")
 
     # bridge interface may not exists
-    brname = intfname.split(".")[0]
-    subprocess.Popen('/sbin/brctl delif "%s" "%s" > /dev/null' % (brname, intfname), shell=True).wait()
+    try:
+        brname = intfname.split(".")[0]
+        VirtUtil.removeInterfaceFromBridge(brname, intfname)
+    except:
+        pass
 
     ret = subprocess.Popen('/bin/ip tuntap del dev "%s" mode tap' % (intfname), shell=True).wait()
     assert ret == 0
 
 
 def delBridgeInterface(intfname):
-    brname = intfname
-    ret = subprocess.Popen('/bin/ifconfig "%s" down' % (brname), shell=True).wait()
-    assert ret == 0
-    ret = subprocess.Popen('/sbin/brctl delbr "%s"' % (brname), shell=True).wait()
-    assert ret == 0
+    with pyroute2.IPRoute() as ip:
+        idx = ip.link_lookup(ifname=intfname)[0]
+        ip.link("set", index=idx, state="down")
+        ip.link("del", index=idx)
 
 
 def getProcessId(execName):
@@ -108,7 +112,6 @@ if __name__ == "__main__":
     assert os.path.exists("/bin/ip")
     assert os.path.exists("/bin/ps")
     assert os.path.exists("/bin/kill")
-    assert os.path.exists("/sbin/brctl")
     assert os.path.exists("/sbin/nft")
     assert os.getuid() == 0
 
