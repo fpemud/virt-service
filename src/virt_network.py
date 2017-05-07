@@ -17,8 +17,6 @@ class VirtNetworkManager:
         self.param = param
         self.netDict = dict()       # { userId: { netName: netObj, netName2: netObj2, ... }, userId2: { ... }, ... }
 
-        if not os.path.exists("/bin/ifconfig"):
-            raise VirtInitializationError("/bin/ifconfig not found")
         if not os.path.exists("/bin/ip"):
             raise VirtInitializationError("/bin/ip not found")
         if not os.path.exists("/sbin/nft"):
