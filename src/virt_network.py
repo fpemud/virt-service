@@ -4,6 +4,8 @@
 import os
 import re
 import shutil
+import pyroute2
+import ipaddress
 from virt_util import VirtUtil
 from virt_param import VirtInitializationError
 from virt_host_network import VirtHostNetworkEventCallback
@@ -15,8 +17,6 @@ class VirtNetworkManager:
         self.param = param
         self.netDict = dict()       # { userId: { netName: netObj, netName2: netObj2, ... }, userId2: { ... }, ... }
 
-        if not os.path.exists("/sbin/brctl"):
-            raise VirtInitializationError("/sbin/brctl not found")
         if not os.path.exists("/bin/ifconfig"):
             raise VirtInitializationError("/bin/ifconfig not found")
         if not os.path.exists("/bin/ip"):
@@ -158,27 +158,30 @@ class _NetworkBridge(_NetworkBase, VirtHostNetworkEventCallback):
         self.mainIntfList = []
         self.tapDict = dict()
 
-        VirtUtil.shell('/sbin/brctl addbr "%s"' % (self.brname))
-        VirtUtil.shell('/bin/ifconfig "%s" up' % (self.brname))
+        with pyroute2.IPRoute() as ip:
+            ip.link("add", kind="bridge", ifname=self.brname)
+            idx = ip.link_lookup(ifname=self.brname)[0]
+            ip.link("set", index=idx, state="up")
         self.param.hostNetwork.registerEventCallback(self)
 
     def release(self):
         assert len(self.tapDict) == 0
         self.param.hostNetwork.unregisterEventCallback(self)
-        VirtUtil.shell('/bin/ifconfig "%s" down' % (self.brname))
-        VirtUtil.shell('/sbin/brctl delbr "%s"' % (self.brname))
+        with pyroute2.IPRoute() as ip:
+            idx = ip.link_lookup(ifname=self.brname)[0]
+            ip.link("set", index=idx, state="down")
+            ip.link("del", index=idx)
         super(_NetworkBridge, self).release()
 
     def onActiveInterfaceAdd(self, ifName):
         # some interface like wlan0 has no bridging capbility, we ignore them
         # fixme: how to send this error to user?
-        ret, dummy = VirtUtil.shell('/sbin/brctl addif "%s" "%s"' % (self.brname, ifName), "retcode+stdout")
-        if ret == 0:
-            self.mainIntfList.append(ifName)
+        VirtUtil.addInterfaceToBridge(self.brname, ifName)
+        self.mainIntfList.append(ifName)
 
     def onActiveInterfaceRemove(self, ifName):
         if ifName in self.mainIntfList:
-            VirtUtil.shell('/sbin/brctl delif "%s" "%s"' % (self.brname, ifName))
+            VirtUtil.removeInterfaceFromBridge(self.brname, ifName)
             self.mainIntfList.remove(ifName)
 
     def addTapIntf(self, sid):
@@ -186,16 +189,20 @@ class _NetworkBridge(_NetworkBase, VirtHostNetworkEventCallback):
 
         tapname = "%s.%d" % (self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
         VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap' % (tapname))
-        VirtUtil.shell('/sbin/brctl addif "%s" "%s"' % (self.brname, tapname))
-        VirtUtil.shell('/bin/ifconfig "%s" up' % (tapname))
+        VirtUtil.addInterfaceToBridge(self.brname, tapname)
+        with pyroute2.IPRoute() as ip:
+            idx = ip.link_lookup(ifname=tapname)[0]
+            ip.link("set", index=idx, state="up")
         self.tapDict[sid] = tapname
 
     def removeTapIntf(self, sid):
         assert sid in self.tapDict
 
         tapname = self.tapDict[sid]
-        VirtUtil.shell('/bin/ifconfig "%s" down' % (tapname))
-        VirtUtil.shell('/sbin/brctl delif "%s" "%s"' % (self.brname, tapname))
+        with pyroute2.IPRoute() as ip:
+            idx = ip.link_lookup(ifname=tapname)[0]
+            ip.link("set", index=idx, state="down")
+        VirtUtil.removeInterfaceFromBridge(self.brname, tapname)
         VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap' % (tapname))
         del self.tapDict[sid]
 
@@ -218,10 +225,13 @@ class _NetworkNat(_NetworkBase, VirtHostNetworkEventCallback):
         self.mainIntfList = []
         self.tapDict = dict()
 
-        VirtUtil.shell('/sbin/brctl addbr "%s"' % (self.brname))
-        VirtUtil.shell('/bin/ifconfig "%s" hw ether "%s"' % (self.brname, self.brmac))
-        VirtUtil.shell('/bin/ifconfig "%s" "%s" netmask "%s"' % (self.brname, self.brip, self.netmask))
-        VirtUtil.shell('/bin/ifconfig "%s" up' % (self.brname))
+        with pyroute2.IPRoute() as ip:
+            brnet = ipaddress.IPv4Network(self.brip + "/" + self.netmask, strict=False)
+            ip.link("add", kind="bridge", ifname=self.brname)
+            idx = ip.link_lookup(ifname=self.brname)[0]
+            ip.link('set', index=idx, address='00:11:22:33:44:55')
+            ip.addr("add", index=idx, address=str(self.brip), mask=brnet.prefixlen, broadcast=str(brnet.broadcast_address))
+            ip.link("set", index=idx, state="up")
         self._addNftNatRule(self.netip, self.netmask)
 
         self.param.dhcpServer.startOnNetwork(self)
@@ -236,8 +246,10 @@ class _NetworkNat(_NetworkBase, VirtHostNetworkEventCallback):
         self.param.dhcpServer.stopOnNetwork(self)
 
         self._removeNftNatRule(self.netip, self.netmask)
-        VirtUtil.shell('/bin/ifconfig "%s" down' % (self.brname))
-        VirtUtil.shell('/sbin/brctl delbr "%s"' % (self.brname))
+        with pyroute2.IPRoute() as ip:
+            idx = ip.link_lookup(ifname=self.brname)[0]
+            ip.link("set", index=idx, state="down")
+            ip.link("del", index=idx)
 
         super(_NetworkNat, self).release()
 
@@ -252,16 +264,20 @@ class _NetworkNat(_NetworkBase, VirtHostNetworkEventCallback):
 
         tapname = "%s.%d" % (self.brname, VirtUtil.getMaxTapId(self.brname) + 1)
         VirtUtil.shell('/bin/ip tuntap add dev "%s" mode tap' % (tapname))
-        VirtUtil.shell('/sbin/brctl addif "%s" "%s"' % (self.brname, tapname))
-        VirtUtil.shell('/bin/ifconfig "%s" up' % (tapname))
+        VirtUtil.addInterfaceToBridge(self.brname, tapname)
+        with pyroute2.IPRoute() as ip:
+            idx = ip.link_lookup(ifname=tapname)[0]
+            ip.link("set", index=idx, state="up")
         self.tapDict[sid] = tapname
 
     def removeTapIntf(self, sid):
         assert sid in self.tapDict
 
         tapname = self.tapDict[sid]
-        VirtUtil.shell('/bin/ifconfig "%s" down' % (tapname))
-        VirtUtil.shell('/sbin/brctl delif "%s" "%s"' % (self.brname, tapname))
+        with pyroute2.IPRoute() as ip:
+            idx = ip.link_lookup(ifname=tapname)[0]
+            ip.link("set", index=idx, state="down")
+        VirtUtil.removeInterfaceFromBridge(self.brname, tapname)
         VirtUtil.shell('/bin/ip tuntap del dev "%s" mode tap' % (tapname))
         del self.tapDict[sid]
 

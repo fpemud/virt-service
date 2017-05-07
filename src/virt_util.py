@@ -9,6 +9,8 @@ import grp
 import pwd
 import socket
 import re
+import struct
+import fcntl
 
 
 class VirtUtil:
@@ -220,6 +222,32 @@ class VirtUtil:
             netmask *= 256
             netmask += int(netmasks[i])
         return 32 - (netmask ^ 0xFFFFFFFF).bit_length()
+
+    @staticmethod
+    def addInterfaceToBridge(brname, ifname):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            ifreq = struct.pack("16si", ifname, 0)
+            ret = fcntl.ioctl(s.fileno(), 0x8933, ifreq)            # SIOCGIFINDEX
+            ifindex = struct.unpack("16si", ret)[1]
+
+            ifreq = struct.pack("16si", brname, ifindex)
+            fcntl.ioctl(s.fileno(), 0x89a2, ifreq)                  # SIOCBRADDIF
+        finally:
+            s.close()
+
+    @staticmethod
+    def removeInterfaceFromBridge(brname, ifname):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            ifreq = struct.pack("16si", ifname, 0)
+            ret = fcntl.ioctl(s.fileno(), 0x8933, ifreq)            # SIOCGIFINDEX
+            ifindex = struct.unpack("16si", ret)[1]
+
+            ifreq = struct.pack("16si", brname, ifindex)
+            fcntl.ioctl(s.fileno(), 0x89a3, ifreq)                  # SIOCBRDELIF
+        finally:
+            s.close()
 
     @staticmethod
     def loadKernelModule(modname):
