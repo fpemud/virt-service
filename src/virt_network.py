@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3.4
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
@@ -142,11 +142,11 @@ class _NetworkBase:
 
     def getVmIp(self, sid):
         assert _validateResSetId(sid)
-        return "%d.%d.%d.%d" % (self.ip1, self.nid / 256, self.nid % 256, self.minIpNumber + sid)
+        return "%d.%d.%d.%d" % (self.ip1, self.nid // 256, self.nid % 256, self.minIpNumber + sid)
 
     def getVmMac(self, sid):
         assert _validateResSetId(sid)
-        return "%s:%02x:%02x:%02x" % (self.macOui, self.nid / 256, self.nid % 256, self.minIpNumber + sid)
+        return "%s:%02x:%02x:%02x" % (self.macOui, self.nid // 256, self.nid % 256, self.minIpNumber + sid)
 
 
 class _NetworkBridge(_NetworkBase, VirtHostNetworkEventCallback):
@@ -215,12 +215,12 @@ class _NetworkNat(_NetworkBase, VirtHostNetworkEventCallback):
     def __init__(self, param, uid, nid):
         super(_NetworkNat, self).__init__(param, uid, nid)
 
-        self.netip = "10.%d.%d.0" % (self.nid / 256, self.nid % 256)
+        self.netip = "10.%d.%d.0" % (self.nid // 256, self.nid % 256)
         self.netmask = "255.255.255.0"
 
         self.brname = "vnb%d" % (self.nid)
-        self.brmac = "00:50:00:%02d:%02d" % (self.nid / 256, self.nid % 256)
-        self.brip = "10.%d.%d.1" % (self.nid / 256, self.nid % 256)
+        self.brmac = "00:50:00:%02d:%02d" % (self.nid // 256, self.nid % 256)
+        self.brip = "10.%d.%d.1" % (self.nid // 256, self.nid % 256)
 
         self.mainIntfList = []
         self.tapDict = dict()
