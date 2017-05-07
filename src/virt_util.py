@@ -2,6 +2,7 @@
 # -*- coding: utf-8; tab-width: 4; indent-tabs-mode: t -*-
 
 import os
+import netifaces
 import shutil
 import subprocess
 import time
@@ -287,12 +288,13 @@ class VirtUtil:
 
     @staticmethod
     def getMaxTapId(brname):
-        ret = VirtUtil.shell('/bin/ifconfig -a', 'stdout')
-        matchList = re.findall("^%s.([0-9]+):" % (brname), ret, re.MULTILINE)
         maxId = 0
-        for m in matchList:
-            if int(m) > maxId:
-                maxId = int(m)
+        for ifname in netifaces.interfaces():
+            m = re.match("%s\\.([0-9]+)" % (brname), ifname)
+            if m is not None:
+                id = int(m.group(1))
+                if id > maxId:
+                    maxId = id
         return maxId
 
     @staticmethod
