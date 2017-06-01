@@ -228,12 +228,12 @@ class VirtUtil:
     def addInterfaceToBridge(brname, ifname):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            ifreq = struct.pack("16si", ifname, 0)
-            ret = fcntl.ioctl(s.fileno(), 0x8933, ifreq)            # SIOCGIFINDEX
+            ifreq = struct.pack("16si", ifname.encode("ascii"), 0)
+            ret = fcntl.ioctl(s.fileno(), 0x8933, ifreq)                    # SIOCGIFINDEX
             ifindex = struct.unpack("16si", ret)[1]
 
-            ifreq = struct.pack("16si", brname, ifindex)
-            fcntl.ioctl(s.fileno(), 0x89a2, ifreq)                  # SIOCBRADDIF
+            ifreq = struct.pack("16si", brname.encode("ascii"), ifindex)
+            fcntl.ioctl(s.fileno(), 0x89a2, ifreq)                          # SIOCBRADDIF
         finally:
             s.close()
 
@@ -241,12 +241,12 @@ class VirtUtil:
     def removeInterfaceFromBridge(brname, ifname):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            ifreq = struct.pack("16si", ifname, 0)
-            ret = fcntl.ioctl(s.fileno(), 0x8933, ifreq)            # SIOCGIFINDEX
+            ifreq = struct.pack("16si", ifname.encode("ascii"), 0)
+            ret = fcntl.ioctl(s.fileno(), 0x8933, ifreq)                    # SIOCGIFINDEX
             ifindex = struct.unpack("16si", ret)[1]
 
-            ifreq = struct.pack("16si", brname, ifindex)
-            fcntl.ioctl(s.fileno(), 0x89a3, ifreq)                  # SIOCBRDELIF
+            ifreq = struct.pack("16si", brname.encode("ascii"), ifindex)
+            fcntl.ioctl(s.fileno(), 0x89a3, ifreq)                          # SIOCBRDELIF
         finally:
             s.close()
 
